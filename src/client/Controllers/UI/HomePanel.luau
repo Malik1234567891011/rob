@@ -35,7 +35,7 @@ function HomePanel.build(body: Frame, ctx)
 	local function costText(cost): string
 		local parts = {}
 		if cost.Coins and cost.Coins > 0 then
-			table.insert(parts, "🪙 " .. Theme.fmt(cost.Coins))
+			table.insert(parts, "💰 " .. Theme.fmt(cost.Coins))
 		end
 		if cost.Essence and cost.Essence > 0 then
 			table.insert(parts, "🔮 " .. cost.Essence)
@@ -123,7 +123,7 @@ function HomePanel.build(body: Frame, ctx)
 		for i, id in ipairs(Sanctuary.decorOrder) do
 			local def = Sanctuary.decor[id]
 			local locked = def.plus and not plus
-			local cost = locked and "🏡+ Builder pass" or ("🪙 " .. Theme.fmt(def.price) .. (def.essence and (" 🔮" .. def.essence) or ""))
+			local cost = locked and "🏡+ Builder pass" or ("💰 " .. Theme.fmt(def.price) .. (def.essence and (" 🔮" .. def.essence) or ""))
 			Theme.button({ emoji = def.emoji, sub = def.display .. "\n" .. cost, size = UDim2.fromOffset(120, 116), textSize = 34, order = i,
 				parent = shop, color = (not locked and profile.coins >= def.price) and Theme.PAPER or Theme.PAPER2, onClick = function()
 					if locked then
@@ -157,7 +157,7 @@ function HomePanel.build(body: Frame, ctx)
 				end
 			end
 			if not any then
-				Theme.text({ text = "Plant ingredients from your Bag (tap an item → PLANT). They grow more of themselves.", textSize = 14, color = Theme.MUTED, parent = g, auto = true })
+				Theme.text({ text = "Plant ingredients from your Bag (tap an item, then PLANT). They grow more of themselves.", textSize = 14, color = Theme.MUTED, parent = g, auto = true })
 			end
 			local _ = key
 		end

@@ -34,6 +34,7 @@ function FeedPanel.build(body: Frame, ctx, header: Frame)
 
 	-- left: grid of items; right: info card
 	local grid = Theme.scroll(body, UDim2.new(0.58, -6, 1, 0))
+	local gridLayout: UIGridLayout? = nil
 	Theme.grid(grid, Vector2.new(92, 104), 8)
 	Theme.pad(grid, 4, 6)
 
@@ -198,9 +199,17 @@ function FeedPanel.build(body: Frame, ctx, header: Frame)
 			selected = nil
 			dropHeld()
 		end
+		gridLayout = gridLayout or grid:FindFirstChildOfClass("UIGridLayout")
+		local layout = gridLayout
+		if layout then
+			-- an empty bag gets a sentence, not a squeezed grid cell
+			layout.Parent = #ids == 0 and nil or grid
+		end
 		if #ids == 0 then
-			Theme.text({ text = "Nothing yet! Pick things up around the world — almost anything can be eaten.",
-				textSize = 16, color = Theme.MUTED, parent = grid, auto = true }).Size = UDim2.new(1, 0, 0, 60)
+			local empty = Theme.text({ text = "Nothing yet! Pick things up around the world — almost anything can be eaten.",
+				textSize = 17, color = Theme.MUTED, parent = grid, auto = true })
+			empty.Size = UDim2.new(1, -16, 0, 60)
+			empty.Position = UDim2.fromOffset(8, 12)
 		end
 		for i, id in ipairs(ids) do
 			local def = Ingredients.get(id)

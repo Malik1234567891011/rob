@@ -113,10 +113,25 @@ function Theme.text(p: TextProps): TextLabel
 	t.TextWrapped = p.wrap ~= false
 	t.RichText = true
 	if p.scaled then
-		t.TextScaled = true
+		-- Designed size first; shrink-to-fit only when the text really overflows. (A label that
+		-- starts TextScaled before its parent has a size can lock in a tiny size and never
+		-- re-measure; seen in the edit-mode UI preview.)
+		t.TextSize = p.textSize or 28
 		local c = Instance.new("UITextSizeConstraint")
 		c.MaxTextSize = p.textSize or 28
 		c.Parent = t
+		local function fit()
+			if t.AbsoluteSize.X <= 0 then
+				return
+			end
+			t.TextScaled = false
+			if not t.TextFits then
+				t.TextScaled = true
+			end
+		end
+		t:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
+		t:GetPropertyChangedSignal("Text"):Connect(fit)
+		task.defer(fit)
 	else
 		t.TextSize = p.textSize or 16
 	end
@@ -211,7 +226,7 @@ function Theme.button(p: ButtonProps): TextButton
 		Theme.text({
 			text = p.sub, font = Theme.BOLD, color = p.textColor or Theme.INK, textSize = 12,
 			align = Enum.TextXAlignment.Center, size = UDim2.new(1, -8, 0.34, 0), pos = UDim2.new(0, 4, 0.6, 0),
-			parent = face, name = "Sub", scaled = true,
+			parent = face, name = "Sub", scaled = true, wrap = false,
 		}).TextTransparency = 0.2
 	end
 

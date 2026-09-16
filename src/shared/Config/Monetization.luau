@@ -73,7 +73,7 @@ Monetization.products = {
 		cosmetic = "TrailStars",
 	},
 	TrailBubbles = {
-		id = 0, price = 79, display = "Bubble Trail", emoji = "🫧",
+		id = 0, price = 79, display = "Bubble Trail", emoji = "🔵",
 		blurb = "Bubbles follow your monster everywhere. Cosmetic.",
 		cosmetic = "TrailBubbles",
 	},

@@ -207,7 +207,7 @@ local function buildPanel(name: string)
 	header.Parent = sheet
 	Theme.text({ text = (module.emoji or "") .. "  " .. (module.title or name), font = Theme.DISPLAY, textSize = 26,
 		pos = UDim2.fromOffset(20, 10), size = UDim2.new(1, -90, 0, 38), parent = header, name = "Title" })
-	Theme.button({ label = "✕", size = UDim2.fromOffset(46, 46), pos = UDim2.new(1, -58, 0, 8), color = Theme.PAPER2,
+	Theme.button({ label = "X", size = UDim2.fromOffset(46, 46), pos = UDim2.new(1, -58, 0, 8), color = Theme.PAPER2,
 		parent = header, textSize = 20, onClick = function()
 			UIController.closePanels()
 		end })
@@ -241,8 +241,8 @@ end
 local function sideButton(emoji: string, label: string, accent: Color3, order: number, onClick)
 	local b = Theme.button({ emoji = emoji, size = UDim2.fromOffset(62, 62), color = Theme.PAPER, textSize = 30,
 		order = order, parent = refs.side, onClick = onClick, badge = true, name = label })
-	local tag = Theme.text({ text = label, font = Theme.BOLD, textSize = 11, color = Theme.WHITE, stroke = 0.5,
-		align = Enum.TextXAlignment.Center, size = UDim2.new(1, 12, 0, 14), pos = UDim2.new(0, -6, 1, -8), parent = b })
+	local tag = Theme.text({ text = label, font = Theme.BOLD, textSize = 12, color = Theme.WHITE, stroke = 0.35,
+		align = Enum.TextXAlignment.Center, size = UDim2.new(1, 16, 0, 14), pos = UDim2.new(0, -8, 1, 0), parent = b })
 	tag.ZIndex = 5
 	local _ = accent
 	return b
@@ -250,12 +250,15 @@ end
 
 local function buildHud()
 	-- currencies (SPEC §44 "Top: Coins")
+	-- top-centre: Roblox's own chat window lives in the top-left corner on desktop
 	local pill = Theme.card(gui, Theme.PAPER, 24)
 	pill.Name = "Currency"
-	pill.Position = UDim2.fromOffset(14, 14)
+	pill.AnchorPoint = Vector2.new(0.5, 0)
+	pill.Position = UDim2.new(0.5, 0, 0, 8)
 	pill.Size = UDim2.fromOffset(232, 48)
+	refs.currency = pill
 	Theme.stroke(pill, 2, Theme.LINE)
-	refs.coins = Theme.text({ text = "🪙 0", font = Theme.DISPLAY, textSize = 22, pos = UDim2.fromOffset(14, 0),
+	refs.coins = Theme.text({ text = "💰 0", font = Theme.DISPLAY, textSize = 22, pos = UDim2.fromOffset(14, 0),
 		size = UDim2.new(0.56, -14, 1, 0), parent = pill, scaled = true })
 	refs.essence = Theme.text({ text = "🔮 0", font = Theme.DISPLAY, textSize = 22, pos = UDim2.new(0.56, 4, 0, 0),
 		size = UDim2.new(0.44, -14, 1, 0), parent = pill, scaled = true })
@@ -266,7 +269,7 @@ local function buildHud()
 	chip.AutoButtonColor = false
 	chip.Text = ""
 	chip.AnchorPoint = Vector2.new(0.5, 0)
-	chip.Position = UDim2.new(0.5, 0, 0, 14)
+	chip.Position = UDim2.new(0.5, 0, 0, 64)
 	chip.Size = UDim2.fromOffset(260, 40)
 	chip.BackgroundColor3 = Theme.PAPER
 	chip.BackgroundTransparency = 0.08
@@ -274,6 +277,11 @@ local function buildHud()
 	Theme.corner(chip, 20)
 	refs.today = Theme.text({ text = "", font = Theme.BOLD, textSize = 15, align = Enum.TextXAlignment.Center,
 		size = UDim2.new(1, -16, 1, 0), pos = UDim2.fromOffset(8, 0), parent = chip, scaled = true })
+	-- an empty pill is noise: only show the chip when there is something to say
+	chip.Visible = false
+	refs.today:GetPropertyChangedSignal("Text"):Connect(function()
+		chip.Visible = refs.today.Text ~= "" and not ctx.brandNew
+	end)
 	chip.MouseButton1Click:Connect(function()
 		UIController.open("Quests")
 	end)
@@ -283,10 +291,10 @@ local function buildHud()
 	side.Name = "Side"
 	side.BackgroundTransparency = 1
 	side.AnchorPoint = Vector2.new(1, 0.5)
-	side.Position = UDim2.new(1, -12, 0.45, 0)
+	side.Position = UDim2.new(1, -12, 0.54, 0)
 	side.Size = UDim2.fromOffset(62, 460)
 	side.Parent = gui
-	Theme.list(side, Enum.FillDirection.Vertical, 16, Enum.HorizontalAlignment.Center)
+	Theme.list(side, Enum.FillDirection.Vertical, 20, Enum.HorizontalAlignment.Center)
 	refs.side = side
 	refs.btnQuests = sideButton("📜", "Quests", Theme.accent.quest, 1, function() UIController.open("Quests") end)
 	refs.btnBook = sideButton("📖", "Book", Theme.accent.book, 2, function() UIController.open("Book") end)
@@ -306,7 +314,21 @@ local function buildHud()
 	bar.Parent = gui
 	Theme.list(bar, Enum.FillDirection.Horizontal, 12, Enum.HorizontalAlignment.Center)
 	refs.feedBtn = Theme.button({ emoji = "🍎", label = "FEED", size = UDim2.fromOffset(136, 72), color = Theme.accent.feed,
-		textSize = 26, parent = bar, order = 1, badge = true, onClick = function() UIController.open("Feed") end })
+		textSize = 26, parent = bar, order = 1, badge = true, onClick = function()
+			-- SPEC §8 0:12 "FEED 🍎": the very first meal is one tap, and the panel never hides
+			-- the monster at the moment it changes
+			local profile = ctx.profile
+			if profile and (profile.stats and profile.stats.feeds or 0) == 0 and (profile.activeCreature or 0) > 0 then
+				local pick = (profile.inventory.Apple or 0) > 0 and "Apple" or next(profile.inventory)
+				if pick then
+					local r = Net.func("Feed"):InvokeServer(pick)
+					if r and r.ok then
+						return
+					end
+				end
+			end
+			UIController.open("Feed")
+		end })
 	refs.bagBtn = Theme.button({ emoji = "🎒", label = "BAG", size = UDim2.fromOffset(104, 72), color = Theme.PAPER,
 		textSize = 22, parent = bar, order = 2, onClick = function()
 			local p = panels.Feed
@@ -325,7 +347,9 @@ local function buildHud()
 	tracker.AutoButtonColor = false
 	tracker.BackgroundColor3 = Theme.PAPER
 	tracker.BackgroundTransparency = 0.18
-	tracker.Position = UDim2.fromOffset(14, 74)
+	-- left side, below where Roblox's chat window sits
+	tracker.AnchorPoint = Vector2.new(0, 0.5)
+	tracker.Position = UDim2.new(0, 14, 0.5, 0)
 	tracker.Size = UDim2.fromOffset(232, 0)
 	tracker.AutomaticSize = Enum.AutomaticSize.Y
 	tracker.Parent = gui
@@ -436,12 +460,16 @@ local function animateCurrency(profile)
 		local e = 1 - (1 - t) ^ 3
 		shownCoins = math.floor(startC + (targetC - startC) * e)
 		shownEssence = math.floor(startE + (targetE - startE) * e)
-		refs.coins.Text = "🪙 " .. Theme.fmt(shownCoins)
+		refs.coins.Text = "💰 " .. Theme.fmt(shownCoins)
 		refs.essence.Text = "🔮 " .. Theme.fmt(shownEssence)
 		if t >= 1 then
 			conn:Disconnect()
 		end
 	end)
+end
+
+function UIController.profile()
+	return ctx.profile
 end
 
 function UIController.setProfile(profile)
@@ -451,6 +479,20 @@ function UIController.setProfile(profile)
 	refreshTracker()
 	-- SPEC §36: no shop surface before the first evolution
 	refs.btnShop.Visible = (profile.stats and profile.stats.evolutions or 0) >= 1
+	-- SPEC §8: the first minute is eggs → monster → apple → FEED. Menus arrive after the
+	-- first meal, not before (nothing competes with "It wants that apple.")
+	local brandNew = (profile.stats and profile.stats.feeds or 0) == 0 and (profile.ftueStep or 0) < 4
+	refs.side.Visible = not brandNew
+	refs.tracker.Visible = not brandNew
+	refs.bagBtn.Visible = not brandNew
+	refs.feedBtn.Visible = (profile.activeCreature or 0) > 0 -- nothing to feed before hatching
+	refs.monsterBtn.Visible = not brandNew
+	refs.currency.Visible = not brandNew
+	local todayChip = refs.today and refs.today.Parent :: GuiObject?
+	if todayChip and brandNew then
+		todayChip.Visible = false
+	end
+	ctx.brandNew = brandNew
 	local hasItems = next(profile.inventory or {}) ~= nil
 	local feedBadge = refs.feedBtn:FindFirstChild("Badge") :: Frame?
 	if feedBadge then
@@ -521,6 +563,18 @@ function UIController.build()
 	gui.Parent = player:WaitForChild("PlayerGui")
 
 	ctx.world = ReplicatedStorage:WaitForChild("WorldState", 10)
+	-- SPEC §44 mobile first: a phone in landscape is ~390 px tall, the HUD is designed at
+	-- ~560+. Scale the whole interface down on small screens instead of letting it overflow.
+	local uiScale = Instance.new("UIScale")
+	uiScale.Parent = gui
+	local function rescale()
+		local size = gui.AbsoluteSize
+		if size.X > 0 and size.Y > 0 then
+			uiScale.Scale = math.clamp(math.min(size.X / 900, size.Y / 600), 0.78, 1)
+		end
+	end
+	gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(rescale)
+	rescale()
 	buildHud()
 	for _, name in ipairs(panelOrder) do
 		local ok, err = pcall(buildPanel, name)

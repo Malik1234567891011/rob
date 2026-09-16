@@ -159,6 +159,15 @@ local function nameplate(model: Model, genome)
 	sub.Parent = gui
 end
 
+function CreatureService.enablePet(player: Player)
+	local state = active[player.UserId]
+	local model = state and state.model
+	local prompt = model and model:FindFirstChild("PetPrompt", true) :: ProximityPrompt?
+	if prompt then
+		prompt.Enabled = true
+	end
+end
+
 -- ═══ TEMPERAMENT (SPEC §18) ══════════════════════════════════════════════════
 
 local function dominantTemperament(genome): string
@@ -207,9 +216,10 @@ local function petPrompt(model: Model, owner: Player)
 	if not root then
 		return
 	end
+	-- above the head, so the prompt never covers the monster you're looking at
 	local attach = Instance.new("Attachment")
 	attach.Name = "PromptAnchor"
-	attach.Position = Vector3.new(0, (model:GetAttribute("Height") or 2) * 0.6, 0)
+	attach.Position = Vector3.new(0, (model:GetAttribute("Height") or 2) + 1.2, 0)
 	attach.Parent = root
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "PetPrompt"
@@ -220,6 +230,10 @@ local function petPrompt(model: Model, owner: Player)
 	prompt.RequiresLineOfSight = false
 	prompt.Style = Enum.ProximityPromptStyle.Default
 	prompt.KeyboardKeyCode = Enum.KeyCode.F
+	prompt.UIOffset = Vector2.new(0, -24)
+	-- the first minute has one job: feed it. Petting appears after the first meal.
+	local profile = PlayerDataService.get(owner)
+	prompt.Enabled = profile ~= nil and ((profile.stats and profile.stats.feeds or 0) > 0 or (profile.ftueStep or 0) >= 4)
 	prompt.Parent = attach
 	prompt.Triggered:Connect(function(who)
 		local state = active[owner.UserId]
@@ -476,7 +490,8 @@ local function step(dt: number)
 			if state.temperament == "nervous" and mood == "hide" then
 				anchor = hrp.Position - look * math.max(3, reach * 0.45)
 			else
-				anchor = hrp.Position + look * reach + right * state.sideOffset * math.min(3, state.length * 0.9)
+				-- beside you, not behind your back from the camera: small monsters need the most room
+				anchor = hrp.Position + look * reach + right * state.sideOffset * math.clamp(state.length * 0.9, 3.5, 5)
 			end
 			local toAnchor = flat(anchor - pos)
 			local gap = toAnchor.Magnitude

@@ -414,6 +414,50 @@ local function spawnAspirationCreature()
 	end)
 end
 
+-- ═══ THE LEGEND (SPEC §77 "how the hell did he get that?") ══════════════════
+-- Void Fang prowls the canyon below the mountain: a secret form nobody has made yet,
+-- in plain sight. It paces the north road, stops, looks, and turns back.
+
+local function spawnLegend()
+	local genome = CreatureBuilder.newGenome({ id = "legend-voidfang", bodyFamily = "Heavy" })
+	genome.stage = 5
+	genome.fedCount = 60
+	genome.name = "???"
+	genome.traits = { Dark = 70, Ancient = 40, Heavy = 40, Night = 30 }
+	genome.mutations.VoidFang = true
+	local ok, model = pcall(CreatureBuilder.build, genome, 1)
+	if not ok or not model or model:GetAttribute("Form") ~= "VoidFang" then
+		return -- the form isn't installed yet; no legend rather than a wrong one
+	end
+	model.Name = "LegendVoidFang"
+	local groundOffset = model:GetAttribute("GroundOffset") or 0
+	model.Parent = runtime
+	CollectionService:AddTag(model, "FAMCreature")
+	task.spawn(function()
+		local CreatureService = require(script.Parent.CreatureService)
+		local zA, zB = -205, -318
+		local z, dir = zA, -1
+		while model.Parent do
+			local root = model.PrimaryPart
+			if not root then
+				break
+			end
+			z += dir * 0.22
+			if z < zB or z > zA then
+				dir = -dir
+				z = math.clamp(z, zB, zA)
+				model:SetAttribute("Mood", "sit")
+				task.wait(6)
+				model:SetAttribute("Mood", nil)
+			end
+			local x = 16 + math.sin(z * 0.05) * 3
+			local y = CreatureService.groundAt(x, z, 40) + groundOffset
+			root.CFrame = CFrame.lookAt(Vector3.new(x, y, z), Vector3.new(x, y, z + dir))
+			task.wait(0.03)
+		end
+	end)
+end
+
 -- ═══ FALLBACK GROUND (unbuilt place / tests) ═════════════════════════════════
 
 local function ensureGround()
@@ -506,6 +550,7 @@ function WorldService.start()
 		WorldService.topUp(id)
 	end
 	spawnAspirationCreature()
+	spawnLegend()
 
 	task.spawn(function()
 		while true do

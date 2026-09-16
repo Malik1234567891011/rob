@@ -38,7 +38,7 @@ Mutations.all = {
 		hint = "It squeaks now. You did this.",
 	},
 	Pebbled = {
-		display = "Pebbled", emoji = "🪨", rarity = "Common", stage = 1,
+		display = "Pebbled", emoji = "⛰️", rarity = "Common", stage = 1,
 		requirements = { Stone = 6 },
 		parts = { Back = "Spikes" }, tintPrimary = 0x8C8478,
 		hint = "Its skin has gone rough.",
@@ -77,7 +77,7 @@ Mutations.all = {
 		hint = "Crystal and shine.",
 	},
 	Featherlight = {
-		display = "Featherlight", emoji = "🪶", rarity = "Uncommon", stage = 2,
+		display = "Featherlight", emoji = "🕊️", rarity = "Uncommon", stage = 2,
 		requirements = { Air = 24 }, blockers = { Heavy = 30 },
 		parts = { Back = "Fins" }, ability = "Glide", sizeMul = 0.92,
 		hint = "Airy things, and stay light.",
@@ -93,7 +93,7 @@ Mutations.all = {
 	-- Stage-2 unlocks for the remaining abilities, so every one of the eleven has an
 	-- ordinary (non-secret) route. SPEC §11: abilities change where you can go.
 	Gills = {
-		display = "Gills", emoji = "🫧", rarity = "Uncommon", stage = 2,
+		display = "Gills", emoji = "🐠", rarity = "Uncommon", stage = 2,
 		requirements = { Water = 24, Flexible = 8 },
 		parts = { Back = "Fins", Tail = "FishTail" }, ability = "Aquatic",
 		tintSecondary = 0x3FA9F5,
@@ -136,7 +136,7 @@ Mutations.all = {
 
 	-- ── Tier 2: stage 3, the shareable ones. ────────────────────────────────
 	Stormwing = {
-		display = "Stormwing", emoji = "🪽", rarity = "Rare", stage = 3,
+		display = "Stormwing", emoji = "🦅", rarity = "Rare", stage = 3,
 		requirements = { Electric = 70, Air = 55 }, blockers = { Heavy = 80 },
 		parts = { Back = "Wings", Tail = "Bolt", Eyes = "Glow" },
 		ability = "Glide", tintSecondary = 0xFFD52E, glow = 0.8,
@@ -273,6 +273,14 @@ Mutations.all = {
 		ability = "Ghost", tintPrimary = 0x4A4260, glow = 0.85,
 		secret = true, hint = "Nobody has written this one down yet.",
 	},
+	VoidFang = {
+		display = "Void Fang", emoji = "🐺", rarity = "Exotic", stage = 5,
+		-- a whole-body transformation (Anatomy.forms.VoidFang), not a part swap
+		requirements = { Dark = 60, Ancient = 30, Heavy = 30 },
+		parts = {}, form = "VoidFang",
+		ability = "Light", glow = 0.7,
+		secret = true, hint = "A beast bound to shadows, guided by something brighter.",
+	},
 	Everything = {
 		display = "Everything", emoji = "🤯", rarity = "Exotic", stage = 5,
 		-- SPEC §41: funny before cool. This is the thumbnail creature.
@@ -289,7 +297,7 @@ Mutations.order = {
 	"Gills","Emberhide","Gumfoot","Wisp","Overgrown","BalloonBelly",
 	"Stormwing","LavaSnail","TVHead","MoonBeast","StaticBloom","Scrapheart",
 	"Cursed","Deepling","Fossilised","Gummy","Frostbitten",
-	"StaticFrog","CupcakeGolem","SockPuppet","Alien","Abyssal","GeodeHeart",
+	"StaticFrog","CupcakeGolem","SockPuppet","Alien","Abyssal","GeodeHeart","VoidFang",
 	"Monarch","VoidMoth","Everything",
 }
 
@@ -298,7 +306,7 @@ Mutations.abilities = {
 	Giant     = { display = "Giant",     emoji = "🏋️", desc = "Move heavy rocks that block paths." },
 	Tiny      = { display = "Tiny",      emoji = "🐜", desc = "Fit through small passages." },
 	Electric  = { display = "Electric",  emoji = "⚡", desc = "Power dead machinery." },
-	Glide     = { display = "Glide",     emoji = "🪽", desc = "Glide across gaps." },
+	Glide     = { display = "Glide",     emoji = "🪂", desc = "Glide across gaps." },
 	Light     = { display = "Light",     emoji = "🔦", desc = "See inside dark caves." },
 	Burrow    = { display = "Burrow",    emoji = "⛏️", desc = "Dig through cracked earth." },
 	Aquatic   = { display = "Aquatic",   emoji = "🌊", desc = "Breathe underwater." },

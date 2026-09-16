@@ -302,7 +302,8 @@ function WorldTerrain.sample(x: number, z: number): (number, Enum.Material, numb
 		mat = M.Mud
 	end
 	if plot then
-		mat = M.Grass
+		-- LeafyGrass carries no tall grass decoration: eggs, babies and pickups stay visible
+		mat = M.LeafyGrass
 		if WorldTerrain.plotAt(x, z, 0) and math.abs(math.sqrt(x * x + z * z) - WorldTerrain.PLOT_R) > 33 then
 			mat = M.Ground -- the little path out to the ring road
 		end

@@ -154,6 +154,27 @@ Anatomy.lodDrop = {
 }
 
 -- ═══ SKINS: surface RESPONSE, not tint (ART_DIRECTION "materials become material") ══
+-- FORMS: whole-body legendary monsters authored as one rigged model (Assets.Creatures.Forms)
+-- instead of assembled from parts. A secret mutation with `form = "<Name>"` turns a monster
+-- into its form; everything else (stage scale, animation, follow, abilities) still applies.
+-- pieces: mesh-name suffix -> look. The rig uses the Heavy (quadruped) bone names.
+Anatomy.forms = {
+	VoidFang = {
+		display = "Void Fang",
+		family = "Heavy",
+		scaleMul = 0.62, -- authored at player height; a Mythic stage scale brings it back up
+		restJaw = 6, -- a permanent low snarl
+		light = 0x2F7BFF,
+		pieces = {
+			Fur = { color = 0x16161C, material = "Fabric" },
+			Glow = { color = 0x2F7BFF, material = "Neon" },
+			Eyes = { color = 0xFF2A2A, material = "Neon" },
+			Gold = { color = 0xC49A3C, material = "Foil" },
+			Dark = { color = 0x0B0B0E, material = "SmoothPlastic" },
+		},
+	},
+}
+
 Anatomy.skins = {
 	Soft      = { material = "SmoothPlastic", reflect = 0.0,  transparency = 0 },
 	Mossy     = { material = "Grass",         reflect = 0.0,  transparency = 0 },

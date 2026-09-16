@@ -232,7 +232,7 @@ function Overlays.offlineReport(report)
 		t("It brought back: " .. table.concat(report.gathered, ", "), Theme.BODY, 15, Theme.INK, 3)
 	end
 	if report.coins and report.coins > 0 then
-		t("🪙 " .. report.coins, Theme.DISPLAY, 20, Theme.INK, 4)
+		t("💰 " .. report.coins, Theme.DISPLAY, 20, Theme.INK, 4)
 	end
 	local b = Theme.button({ label = "Go see", size = UDim2.fromOffset(200, 56), color = Theme.accent.book, textColor = Theme.WHITE, textSize = 22,
 		parent = card, order = 10, onClick = function()

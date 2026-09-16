@@ -123,7 +123,7 @@ local function onEvent(eventName: string)
 						PlayerDataService.addCurrency(player, def.reward)
 						local rewardText = {}
 						if def.reward.Coins then
-							table.insert(rewardText, "🪙 " .. def.reward.Coins)
+							table.insert(rewardText, "💰 " .. def.reward.Coins)
 						end
 						if def.reward.Essence then
 							table.insert(rewardText, "🔮 " .. def.reward.Essence)

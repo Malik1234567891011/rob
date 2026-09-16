@@ -37,7 +37,7 @@ Ingredients.all = {
 		model = { shape = "Ball", size = {2.6,2.0,2.6}, color = 0x2F7D32 },
 	},
 	Blueberry = ing{
-		display = "Blueberry", emoji = "🫐", rarity = "Common", biomes = { "Meadow" },
+		display = "Blueberry", emoji = "🍇", rarity = "Common", biomes = { "Meadow" },
 		influences = { Sweet = 2, Nature = 2, Round = 2, Night = 1 },
 		reaction = { animation = "Nibble", sfx = "Pop" },
 		model = { shape = "Ball", size = {0.8,0.8,0.8}, color = 0x4653B0 },
@@ -76,7 +76,7 @@ Ingredients.all = {
 		model = { shape = "Ball", size = {1.0,0.3,1.0}, color = 0x35C24A },
 	},
 	Beetle = ing{
-		display = "Shiny Beetle", emoji = "🪲", rarity = "Uncommon", biomes = { "Meadow" },
+		display = "Shiny Beetle", emoji = "🐞", rarity = "Uncommon", biomes = { "Meadow" },
 		influences = { Nature = 2, Shiny = 3, Energy = 2 },
 		reaction = { animation = "Crunch", sfx = "HardCrunch" },
 		model = { shape = "Ball", size = {1.0,0.7,1.4}, color = 0x2E7D6B, material = "Glass" },
@@ -88,13 +88,13 @@ Ingredients.all = {
 		model = { shape = "Block", size = {1.6,0.1,1.0}, color = 0x6FA8FF },
 	},
 	Worm = ing{
-		display = "Wiggly Worm", emoji = "🪱", rarity = "Common", biomes = { "Meadow" },
+		display = "Wiggly Worm", emoji = "🐛", rarity = "Common", biomes = { "Meadow" },
 		influences = { Nature = 2, Flexible = 4, Slimy = 2 },
 		reaction = { animation = "Slurp", sfx = "Slurp" },
 		model = { shape = "Cylinder", size = {0.4,1.8,0.4}, color = 0xE08A9B },
 	},
 	Stick = ing{
-		display = "Stick", emoji = "🪵", rarity = "Common", biomes = { "Meadow" },
+		display = "Stick", emoji = "🥢", rarity = "Common", biomes = { "Meadow" },
 		influences = { Nature = 2, Heavy = 1 },
 		reaction = { animation = "Crunch", sfx = "WoodSnap" },
 		model = { shape = "Cylinder", size = {0.35,2.6,0.35}, color = 0x7A5230 },
@@ -112,7 +112,7 @@ Ingredients.all = {
 		model = { shape = "Ball", size = {1.4,1.0,1.4}, color = 0x5C4433 },
 	},
 	Pebble = ing{
-		display = "Pebble", emoji = "🪨", rarity = "Common", biomes = { "Meadow", "Junkyard" },
+		display = "Pebble", emoji = "⚪", rarity = "Common", biomes = { "Meadow", "Junkyard" },
 		influences = { Stone = 4, Heavy = 3 },
 		reaction = { animation = "Crunch", sfx = "RockCrack" },
 		model = { shape = "Ball", size = {1.1,0.9,1.2}, color = 0x8C8478 },
@@ -150,7 +150,7 @@ Ingredients.all = {
 		          topper = { shape = "Ball", size = {1.6,0.9,1.6}, color = 0xD1443F, offset = {0,0.55,0} } },
 	},
 	Feather = ing{
-		display = "Feather", emoji = "🪶", rarity = "Common", biomes = { "Meadow", "SkyIslands" },
+		display = "Feather", emoji = "🕊️", rarity = "Common", biomes = { "Meadow", "SkyIslands" },
 		influences = { Air = 4, Flexible = 2, Shiny = 1 },
 		reaction = { animation = "Snap", sfx = "Whoosh" },
 		model = { shape = "Block", size = {0.35,1.8,0.12}, color = 0xF2F2F2 },
@@ -214,7 +214,7 @@ Ingredients.all = {
 		model = { shape = "Cylinder", size = {0.3,2.2,0.3}, color = 0xD03A3A },
 	},
 	Tire = ing{
-		display = "Old Tire", emoji = "🛞", rarity = "Common", biomes = { "Junkyard" },
+		display = "Old Tire", emoji = "🚙", rarity = "Common", biomes = { "Junkyard" },
 		influences = { Artificial = 3, Heavy = 4, Round = 3, Toy = 1 },
 		reaction = { animation = "BigBite", sfx = "RubberThud" },
 		model = { shape = "Cylinder", size = {2.6,0.9,2.6}, color = 0x232323 },
@@ -342,13 +342,13 @@ Ingredients.all = {
 		model = { shape = "Ball", size = {0.9,0.9,0.9}, color = 0xF4F1FF, material = "Glass" },
 	},
 	Coral = ing{
-		display = "Coral", emoji = "🪸", rarity = "Uncommon", biomes = { "Ocean" },
+		display = "Coral", emoji = "🌺", rarity = "Uncommon", biomes = { "Ocean" },
 		influences = { Water = 3, Stone = 2, Nature = 2, Shiny = 1 },
 		reaction = { animation = "Crunch", sfx = "HardCrunch" },
 		model = { shape = "Cylinder", size = {0.8,1.6,0.8}, color = 0xFF7F9E },
 	},
 	Jellyfish = ing{
-		display = "Jellyfish", emoji = "🪼", rarity = "Uncommon", biomes = { "Ocean" },
+		display = "Jellyfish", emoji = "🎐", rarity = "Uncommon", biomes = { "Ocean" },
 		influences = { Water = 3, Electric = 2, Slimy = 3, Flexible = 2 },
 		reaction = { animation = "Slurp", sfx = "ElectricFizz", color = 0xC7A6FF },
 		model = { shape = "Ball", size = {1.4,1.0,1.4}, color = 0xC7A6FF, material = "Glass" },
@@ -378,7 +378,7 @@ Ingredients.all = {
 		model = { shape = "Ball", size = {1.4,0.7,1.1}, color = 0xE0472F },
 	},
 	SunkenCoin = ing{
-		display = "Sunken Coin", emoji = "🪙", rarity = "Rare", biomes = { "Ocean" },
+		display = "Sunken Coin", emoji = "💰", rarity = "Rare", biomes = { "Ocean" },
 		influences = { Shiny = 4, Metal = 3, Ancient = 2 },
 		reaction = { animation = "Crunch", sfx = "MetalClang", color = 0xFFCF3A },
 		model = { shape = "Cylinder", size = {1.2,0.18,1.2}, color = 0xFFCF3A, material = "Foil" },
@@ -392,13 +392,13 @@ Ingredients.all = {
 		model = { shape = "Wedge", size = {0.8,1.4,0.8}, color = 0xB07CFF, material = "Glass" },
 	},
 	Glowworm = ing{
-		display = "Glowworm", emoji = "🐛", rarity = "Uncommon", biomes = { "CrystalCaves" },
+		display = "Glowworm", emoji = "💚", rarity = "Uncommon", biomes = { "CrystalCaves" },
 		influences = { Shiny = 3, Celestial = 2, Nature = 2, Flexible = 2 },
 		reaction = { animation = "Slurp", sfx = "Sparkle", color = 0xB6FF6B },
 		model = { shape = "Cylinder", size = {0.4,1.6,0.4}, color = 0xB6FF6B, material = "Neon" },
 	},
 	Geode = ing{
-		display = "Geode", emoji = "🪨", rarity = "Uncommon", biomes = { "CrystalCaves" },
+		display = "Geode", emoji = "💎", rarity = "Uncommon", biomes = { "CrystalCaves" },
 		influences = { Crystal = 4, Stone = 3, Heavy = 2 },
 		reaction = { animation = "Crunch", sfx = "RockCrack", color = 0xA77BFF },
 		model = { shape = "Ball", size = {1.3,1.1,1.3}, color = 0x7B6F66 },

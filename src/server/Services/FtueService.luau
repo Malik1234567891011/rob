@@ -115,6 +115,7 @@ local function placeProp(ingredientId: string, position: Vector3, parent: Instan
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = 14
 	prompt.RequiresLineOfSight = false
+	prompt.UIOffset = Vector2.new(0, -40) -- float above the food, never on top of it
 	prompt.Parent = main
 
 	prompt.Triggered:Connect(function(who)
@@ -145,8 +146,10 @@ local function spawnEggs(player: Player)
 	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
 	-- eggs sit in the player's own backyard (their Sanctuary plot), right in front of them
 	local SanctuaryService = require(script.Parent.SanctuaryService)
+	-- the row is laid out in the PLOT's frame (eggCF faces into the plot, away from where the
+	-- player spawns), so the three eggs always sit side by side in front of the player
 	local eggCF = SanctuaryService.eggCF(player)
-	local base = eggCF and (eggCF.Position + Vector3.new(0, 1.2, 9)) or (hrp and hrp.Position) or Vector3.new(0, 3, 26)
+	local rowCF = eggCF or (hrp and (hrp.CFrame * CFrame.new(0, -3, -11))) or CFrame.new(0, 2, 26)
 
 	local set = Instance.new("Folder")
 	set.Name = "Eggs_" .. player.Name
@@ -154,10 +157,12 @@ local function spawnEggs(player: Player)
 
 	for i, egg in ipairs(EGGS) do
 		local p = propMesh(egg.mesh)
-		local spot = base + Vector3.new((i - 2) * 4.5, -1.2, -9)
+		-- a shallow V: the middle egg sits further back so it shows over the player's shoulder
+		local spot = (rowCF * CFrame.new((i - 2) * 6.5, 0, i == 2 and 5 or 0)).Position
+		local gy = CreatureService.groundAt(spot.X, spot.Z, spot.Y + 6)
+		spot = Vector3.new(spot.X, gy, spot.Z)
 		if p then
-			local gy = CreatureService.groundAt(spot.X, spot.Z, spot.Y + 4)
-			spot = Vector3.new(spot.X, gy, spot.Z)
+			p.Size *= 1.3 -- they have to read from the spawn point at a glance
 		else
 			local ball = Instance.new("Part")
 			ball.Shape = Enum.PartType.Ball
@@ -171,7 +176,7 @@ local function spawnEggs(player: Player)
 		egpart.Anchored = true
 		egpart.CanCollide = false
 		-- the base sits on the ground; the egg rocks about its base, not its middle
-		local baseCF = CFrame.new(spot) * CFrame.Angles(0, math.rad((i - 2) * 25), 0)
+		local baseCF = CFrame.new(spot) * rowCF.Rotation * CFrame.Angles(0, math.rad(180 + (i - 2) * 20), 0)
 		local half = egpart.Size.Y * 0.5
 		egpart.CFrame = baseCF * CFrame.new(0, half, 0)
 		egpart.Parent = set
@@ -191,6 +196,7 @@ local function spawnEggs(player: Player)
 		prompt.ActionText = "Pick"
 		prompt.ObjectText = "Egg"
 		prompt.HoldDuration = 0
+		prompt.UIOffset = Vector2.new(0, -70) -- above the egg, never over it
 		prompt.MaxActivationDistance = 16
 		prompt.RequiresLineOfSight = false
 		prompt.Parent = p
@@ -204,7 +210,9 @@ local function spawnEggs(player: Player)
 
 	eggSets[player.UserId] = set
 	AnalyticsService.track("ftue_egg_seen", player, {})
-	step(player, 0, { text = "Pick one." })
+	-- the camera turns to the eggs (the player was just teleported onto their plot and the
+	-- default camera still faces wherever they spawned)
+	step(player, 0, { text = "Pick one.", focus = (rowCF * CFrame.new(0, 1.5, 2)).Position })
 end
 
 function FtueService.pickEgg(player: Player, index: number)
@@ -264,9 +272,14 @@ function FtueService.pickEgg(player: Player, index: number)
 		if not player.Parent then
 			return
 		end
+		-- the apple lands between the player and the monster: both stay in view
 		local torso = model and model.PrimaryPart
 		local base = torso and torso.Position or Vector3.new(0, 1, 20)
-		placeProp(STARTER_APPLE, base + Vector3.new(3.5, 0, 3.0), workspace, player, function()
+		local hrpNow = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local toPlayer = hrpNow and Vector3.new(hrpNow.Position.X - base.X, 0, hrpNow.Position.Z - base.Z) or Vector3.new(0, 0, 1)
+		toPlayer = toPlayer.Magnitude > 0.1 and toPlayer.Unit or Vector3.new(0, 0, 1)
+		local side = Vector3.new(-toPlayer.Z, 0, toPlayer.X)
+		placeProp(STARTER_APPLE, base + toPlayer * 2 + side * 4, workspace, player, function()
 			step(player, 3, { text = "FEED 🍎", prompt = "feed" })
 		end)
 		step(player, 2, { text = "It wants that apple." })
@@ -292,11 +305,17 @@ function FtueService.onFirstFeed(player: Player)
 		local model = CreatureService.get(player)
 		local torso = model and model.PrimaryPart
 		local base = torso and torso.Position or Vector3.new(0, 1, 20)
+		local hrpNow = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local toPlayer = hrpNow and Vector3.new(hrpNow.Position.X - base.X, 0, hrpNow.Position.Z - base.Z) or Vector3.new(0, 0, 1)
+		toPlayer = toPlayer.Magnitude > 0.1 and toPlayer.Unit or Vector3.new(0, 0, 1)
+		local side = Vector3.new(-toPlayer.Z, 0, toPlayer.X)
+		-- a fan of three weird things between you and the monster, all on screen
 		for i, id in ipairs(WEIRD_THREE) do
-			local angle = math.rad(-40 + (i - 1) * 40)
-			local offset = Vector3.new(math.sin(angle) * 8, 0, math.cos(angle) * 8)
-			placeProp(id, base + offset, workspace, player, nil)
+			-- spread wide and ahead of the player so the three "Take" prompts never stack
+			local pos = base + toPlayer * 3 + side * ((i - 2) * 7)
+			placeProp(id, pos, workspace, player, nil)
 		end
+		CreatureService.enablePet(player)
 		step(player, 4, { text = "Try feeding it something weird." })
 	end)
 end

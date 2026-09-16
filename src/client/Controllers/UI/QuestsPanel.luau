@@ -49,7 +49,7 @@ function QuestsPanel.build(body: Frame, ctx)
 				set((q.progress or 0) / def.goal)
 				local reward = {}
 				if def.reward.Coins then
-					table.insert(reward, "🪙 " .. def.reward.Coins)
+					table.insert(reward, "💰 " .. def.reward.Coins)
 				end
 				if def.reward.Essence then
 					table.insert(reward, "🔮 " .. def.reward.Essence)
@@ -129,7 +129,7 @@ function QuestsPanel.build(body: Frame, ctx)
 			local def = id and Ingredients.get(id)
 			if def then
 				i += 1
-				Theme.button({ emoji = def.emoji, sub = def.display .. " · 🪙" .. price, size = UDim2.fromOffset(112, 112), textSize = 36,
+				Theme.button({ emoji = def.emoji, sub = def.display .. " · 💰" .. price, size = UDim2.fromOffset(112, 112), textSize = 36,
 					order = i, parent = shelf, onClick = function()
 						local r = ctx.Net.func("MerchantBuy"):InvokeServer(id)
 						ctx.toast({ title = r and r.ok and "BOUGHT" or "CAN'T BUY", label = r and r.ok and (def.emoji .. " " .. def.display) or tostring(r and r.reason),

@@ -6,7 +6,7 @@
 local Economy = {}
 
 Economy.currencies = {
-	Coins   = { display = "Coins",   emoji = "🪙", color = 0xFFD52E,
+	Coins   = { display = "Coins",   emoji = "💰", color = 0xFFD52E,
 	            blurb = "Discoveries, activities, expeditions, competitions, quests." },
 	Essence = { display = "Essence", emoji = "🔮", color = 0xA77BFF,
 	            blurb = "Evolutions, discoveries, major achievements, lineage milestones." },

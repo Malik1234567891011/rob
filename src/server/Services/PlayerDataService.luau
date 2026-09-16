@@ -289,6 +289,22 @@ function PlayerDataService.save(player: Player, release: boolean?)
 	end
 end
 
+-- Studio-only: replace a player's save with a brand-new profile (keeps the session lock),
+-- so the next join is a true first-time experience. Never exposed to clients.
+function PlayerDataService.wipe(player: Player)
+	if not game:GetService("RunService"):IsStudio() then
+		return false
+	end
+	local fresh = defaultProfile()
+	local old = profiles[player.UserId]
+	if old and old.__lock then
+		fresh.__lock = old.__lock
+	end
+	profiles[player.UserId] = fresh
+	persist(player.UserId, fresh, false)
+	return true
+end
+
 local onLoadedCallbacks: { (Player, any) -> () } = {}
 function PlayerDataService.onLoaded(fn)
 	table.insert(onLoadedCallbacks, fn)

@@ -5,7 +5,7 @@
 local Progression = {}
 
 Progression.stages = {
-	{ id = 1, name = "Baby",   emoji = "🥚", feedsToNext = 5,  sizeBase = 0.55, malleability = 1.00,
+	{ id = 1, name = "Baby",   emoji = "🥚", feedsToNext = 5,  sizeBase = 0.7, malleability = 1.00,
 	  blurb = "Cute. Changes fast. Traits are extremely malleable." },
 	{ id = 2, name = "Little", emoji = "🐣", feedsToNext = 14, sizeBase = 0.80, malleability = 0.80,
 	  blurb = "Basic anatomy emerges. First environmental ability." },

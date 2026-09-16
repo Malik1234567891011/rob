@@ -100,6 +100,7 @@ function CreatureBuilder.resolve(genome)
 	local glow = genome.material.Glow or 0
 	local sizeMul = 1
 	local abilities = {}
+	local form: string? = nil
 
 	for _, m in ipairs(CreatureBuilder.activeMutations(genome)) do
 		local def = m.def
@@ -123,6 +124,9 @@ function CreatureBuilder.resolve(genome)
 		if def.ability then
 			abilities[def.ability] = true
 		end
+		if def.form then
+			form = def.form
+		end
 	end
 
 	local domTrait = CreatureBuilder.dominantTrait(genome)
@@ -144,6 +148,7 @@ function CreatureBuilder.resolve(genome)
 		skin = skin,
 		abilities = abilities,
 		dominant = domTrait,
+		form = form,
 	}
 end
 
@@ -296,9 +301,102 @@ end
 	`lod` 1 = full, 2 = drops tiny interior pieces, 3 = silhouette + eyes.
 	SPEC §72: never ship every full monster at max fidelity to mobile.
 ]]
+local function formTemplate(name: string): Model?
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	local creatures = assets and assets:FindFirstChild("Creatures")
+	local forms = creatures and creatures:FindFirstChild("Forms")
+	local t = forms and forms:FindFirstChild(name)
+	return t and t:IsA("Model") and t or nil
+end
+
+-- shared tail of both build paths: scale, measure, stamp attributes
+local function finish(model: Model, root: BasePart, genome, ctx, scale: number, family: string, head: string): Model
+	if math.abs(scale - 1) > 1e-3 then
+		model:ScaleTo(scale)
+	end
+	local lowest, highest = math.huge, -math.huge
+	for _, d in ipairs(model:GetChildren()) do
+		if d:IsA("MeshPart") then
+			local half = d.Size.Y * 0.5
+			lowest = math.min(lowest, d.Position.Y - half)
+			highest = math.max(highest, d.Position.Y + half)
+		end
+	end
+	if lowest == math.huge then
+		lowest, highest = 0, 2
+	end
+	model:SetAttribute("GroundOffset", root.Position.Y - lowest)
+	model:SetAttribute("Height", highest - lowest)
+	model:SetAttribute("CreatureId", genome.id)
+	model:SetAttribute("Stage", genome.stage or 1)
+	model:SetAttribute("Generation", genome.generation or 1)
+	model:SetAttribute("Dominant", ctx.dominant or "")
+	model:SetAttribute("Scale", scale)
+	model:SetAttribute("Family", family)
+	model:SetAttribute("Head", head)
+	return model
+end
+
+-- A legendary FORM: one authored rig replaces body + parts entirely (Anatomy.forms)
+local function buildForm(genome, ctx, formName: string, template: Model): Model
+	local def = Anatomy.forms[formName]
+	local model = Instance.new("Model")
+	model.Name = genome.name or def.display
+	local srcRoot = template:FindFirstChild("RootPart") :: BasePart
+	local root = srcRoot:Clone()
+	stripJoints(root)
+	for _, c in ipairs(root:GetChildren()) do
+		if not c:IsA("Bone") then
+			c:Destroy()
+		end
+	end
+	root.Name = "RootPart"
+	root.Anchored = true
+	root.CanCollide = false
+	root.CanTouch = false
+	root.CanQuery = false
+	root.Transparency = 1
+	root.CFrame = CFrame.identity
+	root.Parent = model
+	model.PrimaryPart = root
+	for _, src in ipairs(template:GetChildren()) do
+		if src:IsA("MeshPart") and src.Name ~= "Rig__Sockets" then
+			local piece = string.match(src.Name, "__([%w]+)$") or "Fur"
+			local p = attach(model, root, srcRoot, src)
+			local look = def.pieces[piece] or def.pieces.Fur
+			p.Color = TableUtil.unpackColor(look.color)
+			p.Material = materialEnum(look.material) or Enum.Material.SmoothPlastic
+			p.Reflectance = 0
+			p.Transparency = 0
+			p.TextureID = ""
+			if look.material == "Neon" then
+				p.CastShadow = false
+			end
+		end
+	end
+	model:SetAttribute("RestJaw", def.restJaw or 0)
+	model:SetAttribute("Form", formName)
+	if def.light then
+		local light = Instance.new("PointLight")
+		light.Name = "Glow"
+		light.Color = TableUtil.unpackColor(def.light)
+		light.Brightness = 1.4
+		light.Range = 14
+		light.Parent = root
+	end
+	return finish(model, root, genome, ctx, ctx.scale * (def.scaleMul or 1), def.family or "Heavy", formName)
+end
+
 function CreatureBuilder.build(genome, lod: number?): Model
 	local level = lod or 1
 	local ctx = CreatureBuilder.resolve(genome)
+	if ctx.form and Anatomy.forms and Anatomy.forms[ctx.form] then
+		local template = formTemplate(ctx.form)
+		if template then
+			return buildForm(genome, ctx, ctx.form, template)
+		end
+		warnOnce("form:" .. ctx.form, "form " .. ctx.form .. " not installed; building parts instead")
+	end
 	local body = Anatomy.bodies[genome.bodyFamily] or Anatomy.bodies.Cute
 	ctx.belly = ctx.primary:Lerp(WHITE, 0.45 + (body.bellyLift or 0.15))
 
@@ -384,33 +482,7 @@ function CreatureBuilder.build(genome, lod: number?): Model
 		light.Parent = root
 	end
 
-	if math.abs(ctx.scale - 1) > 1e-3 then
-		model:ScaleTo(ctx.scale)
-	end
-
-	-- measure: lowest and highest point relative to the root, from the rest-pose parts
-	local lowest, highest = math.huge, -math.huge
-	for _, d in ipairs(model:GetChildren()) do
-		if d:IsA("MeshPart") then
-			local half = d.Size.Y * 0.5
-			lowest = math.min(lowest, d.Position.Y - half)
-			highest = math.max(highest, d.Position.Y + half)
-		end
-	end
-	if lowest == math.huge then
-		lowest, highest = 0, 2
-	end
-	local rootY = root.Position.Y
-	model:SetAttribute("GroundOffset", rootY - lowest)
-	model:SetAttribute("Height", highest - lowest)
-	model:SetAttribute("CreatureId", genome.id)
-	model:SetAttribute("Stage", genome.stage or 1)
-	model:SetAttribute("Generation", genome.generation or 1)
-	model:SetAttribute("Dominant", ctx.dominant or "")
-	model:SetAttribute("Scale", ctx.scale)
-	model:SetAttribute("Family", fam.Name)
-	model:SetAttribute("Head", bodyT.Name)
-	return model
+	return finish(model, root, genome, ctx, ctx.scale, fam.Name, bodyT.Name)
 end
 
 -- ═══ GENOME CREATION ═════════════════════════════════════════════════════════

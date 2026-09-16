@@ -7,6 +7,8 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
+-- how many meals this player had when they joined (set by the first ProfileSync)
+local feedsAtJoin: number? = nil
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Net = require(Shared:WaitForChild("Net"))
 local TableUtil = require(Shared.Util:WaitForChild("TableUtil"))
@@ -75,6 +77,9 @@ end
 -- ═══ SERVER PUSHES ═══════════════════════════════════════════════════════════
 
 Net.event("ProfileSync").OnClientEvent:Connect(function(profile)
+	if feedsAtJoin == nil then
+		feedsAtJoin = profile.stats and profile.stats.feeds or 0
+	end
 	UIController.setProfile(profile)
 	EffectsController.applySettings(profile.settings)
 	WorldFxController.syncProfile(profile)
@@ -97,6 +102,22 @@ Net.event("OfflineReport").OnClientEvent:Connect(function(report)
 end)
 
 Net.event("FtueStep").OnClientEvent:Connect(function(index, payload)
+	if typeof(payload) == "table" and typeof(payload.focus) == "Vector3" then
+		-- stand behind the player, looking over their shoulder at what matters
+		task.spawn(function()
+			local char = player.Character or player.CharacterAdded:Wait()
+			local hrp = char:WaitForChild("HumanoidRootPart", 5) :: BasePart?
+			local cam = workspace.CurrentCamera
+			if hrp and cam then
+				task.wait(0.15)
+				local flat = Vector3.new(payload.focus.X - hrp.Position.X, 0, payload.focus.Z - hrp.Position.Z)
+				local dir = flat.Magnitude > 0.1 and flat.Unit or hrp.CFrame.LookVector
+				hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + dir)
+				local eye = hrp.Position - dir * 11 + Vector3.new(0, 6, 0)
+				cam.CFrame = CFrame.lookAt(eye, payload.focus)
+			end
+		end)
+	end
 	UIController.ftue(index, payload)
 end)
 
@@ -108,11 +129,49 @@ Net.event("WorldNotice").OnClientEvent:Connect(function(payload)
 end)
 
 -- SPEC §5: the eat reaction must land as a physical event, not a number.
+-- SPEC §99 #2 "the monster changes visibly, almost immediately": the first meals get a
+-- short over-the-shoulder push-in on the monster so a baby's first sprout can't be missed.
+local shotsLeft = 2
+local function focusShot(model: Model, seconds: number)
+	local cam = workspace.CurrentCamera
+	local root = model.PrimaryPart
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not cam or not root or not hrp then
+		return
+	end
+	local height = model:GetAttribute("Height") or 2
+	local target = root.Position + Vector3.new(0, height * 0.55, 0)
+	local toPlayer = Vector3.new(hrp.Position.X - target.X, 0, hrp.Position.Z - target.Z)
+	toPlayer = toPlayer.Magnitude > 0.1 and toPlayer.Unit or Vector3.new(0, 0, 1)
+	local side = Vector3.new(-toPlayer.Z, 0, toPlayer.X)
+	local eye = target + toPlayer * (4 + height * 1.6) + side * 1.5 + Vector3.new(0, 1 + height * 0.5, 0)
+	local before = cam.CFrame
+	cam.CameraType = Enum.CameraType.Scriptable
+	local TweenService = game:GetService("TweenService")
+	TweenService:Create(cam, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = CFrame.lookAt(eye, target) }):Play()
+	task.delay(seconds, function()
+		local back = TweenService:Create(cam, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), { CFrame = before })
+		back:Play()
+		back.Completed:Wait()
+		cam.CameraType = Enum.CameraType.Custom
+	end)
+end
+
 Net.event("Reaction").OnClientEvent:Connect(function(payload)
 	local model = CreatureController.myCreature()
 	local color = TableUtil.unpackColor(payload.color or 0xFFD52E)
 	if model then
 		task.delay(0.1, flyFoodIntoMouth, payload.ingredient, model, color)
+		-- judged from the profile as it was when you joined: the sync for THIS meal can land
+		-- before the reaction does
+		if shotsLeft > 0 and feedsAtJoin == 0 then
+			shotsLeft -= 1
+			task.delay(0.35, function()
+				-- the model is rebuilt when it mutates: frame the fresh one
+				focusShot(CreatureController.myCreature() or model, 2.2)
+			end)
+		end
 	end
 	task.delay(0.46, EffectsController.play, payload.sfx, 0.08)
 	task.delay(1.6, EffectsController.play, "Gulp", 0.1)

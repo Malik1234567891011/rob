@@ -159,3 +159,40 @@ author 40 meshes we cannot import.
 - Fallback: Studio's 3D Importer, which is GUI-driven and manual.
 
 **Do not author a mesh library until one upload round-trips end to end.**
+
+---
+
+## ⚡ Discovery 2026-09-16: Roblox has native AI mesh generation
+
+While setting up the Blender MCP I found the Roblox Studio MCP already exposes:
+
+- `generate_mesh` — **"Generates a textured mesh from a prompt using AI."** Takes a text
+  prompt, a bounding-box size, `maxTriangles` (12–20,000), and **`partNames` +
+  `segmentation: "explicit"`** to split the result into up to 8 named parts.
+- `segment_mesh` — split an existing MeshPart/Model into up to 5 named sub-parts
+- `generate_procedural_model` — parametric model with user-editable attributes
+- `generate_material` / `generate_texture` — PBR material and texture generation
+- `store_image` / `upload_image` — asset upload path
+
+**Why this matters enormously:** it sidesteps the upload blocker flagged above. These
+generate assets *inside the place*, so there is no Open Cloud API key, no manual 3D
+Importer, no arm64/Rosetta build chain. The MCP sandbox's lack of network does not apply.
+
+`generate_mesh(partNames = "head, body, tail")` is almost exactly the modular-slot system
+this game needs, and `generate_material` maps directly onto the "materials become material,
+not tint" requirement.
+
+**This does not replace Blender for Tier 3.** Hand-authored topology, deliberate edge flow,
+proper weight painting and a custom animation set will still beat prompt-generated
+geometry. But it very plausibly gets us to **solid Tier 2 in hours instead of days**, and —
+more importantly — it lets us prove the *whole assembly + morph + material pipeline*
+end to end before investing in a hand-authored mesh library.
+
+**Recommended order of attack:**
+1. `generate_mesh` one creature body with explicit parts → confirm it imports, rigs, and
+   assembles through the existing `Anatomy`/`CreatureBuilder` slot system
+2. Prove the morph-don't-accumulate swap works with real meshes
+3. Prove `generate_material` gives genuinely different surface response per mutation
+4. *Then* decide which parts justify hand-authoring in Blender for Tier 3
+
+Do step 1 before anything else. It is the cheapest possible test of the riskiest assumption.

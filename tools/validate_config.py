@@ -131,21 +131,61 @@ for m in re.finditer(r'spawnTable = \{(.*?)\}', bio_src, re.S):
         if ing not in INGREDIENTS:
             errors.append(f"Biome spawnTable references unknown ingredient '{ing}'")
 BIOME_IDS = set(re.findall(r'"(\w+)"', block(bio_src, "Biomes.order = {", "}")))
-for m in re.finditer(r'\{ id = "(\w+)", biome = "(\w+)", ability = "(\w+)"(.*?)\n\t  prompt', bio_src, re.S):
-    gid, biome, ability, rest = m.groups()
+gate_blk = block(bio_src, "Biomes.gates = {", "\n}")
+gate_count = 0
+for m in re.finditer(r'\{ id = "(\w+)", biome = "(\w+)", abilities = \{([^}]*)\}(.*?)\n\t  prompt', gate_blk, re.S):
+    gate_count += 1
+    gid, biome, abilities, rest = m.groups()
     if biome not in BIOME_IDS:
         errors.append(f"Gate {gid}: unknown biome '{biome}'")
-    if ability not in ABILITIES:
-        errors.append(f"Gate {gid}: unknown ability '{ability}'")
-    for ing in re.findall(r'"(\w+)"', re.search(r'reward = \{([^}]*)\}', rest).group(1)):
+    abil = re.findall(r'"(\w+)"', abilities)
+    if not abil:
+        errors.append(f"Gate {gid}: no abilities")
+    for a in abil:
+        if a not in ABILITIES:
+            errors.append(f"Gate {gid}: unknown ability '{a}'")
+    rw = re.search(r'reward = \{([^}]*)\}', rest)
+    for ing in re.findall(r'"(\w+)"', rw.group(1) if rw else ""):
         if ing not in INGREDIENTS:
             errors.append(f"Gate {gid}: reward '{ing}' is not an ingredient")
+if gate_count != len(re.findall(r'\{ id = "', gate_blk)):
+    errors.append("Biomes.gates: a gate entry did not parse (format drift?)")
+# every active ability should open at least one gate (SPEC §11)
+gated = set(re.findall(r'"(\w+)"', " ".join(re.findall(r'abilities = \{([^}]*)\}', gate_blk))))
+for a in active:
+    if a not in gated:
+        warnings.append(f"Ability '{a}' opens no gate in the world")
 
 # Biome trait lists
 for m in re.finditer(r'\n\t\ttraits = \{([^}]*)\}', bio_src):
     for t in re.findall(r'"(\w+)"', m.group(1)):
         if t not in TRAITS:
             errors.append(f"Biome traits references unknown trait '{t}'")
+
+
+# ── Quests ────────────────────────────────────────────────────────────────────
+KNOWN_EVENTS = {"fed", "pickup", "trait_new", "mutation_new", "evolved", "gate_opened", "pet", "biome_enter",
+                "trial_done", "parade_entered", "parade_vote", "lineage", "named", "sanctuary_upgrade",
+                "merchant_buy", "event_joined", "party_joined", "quest_done", "sanctuary_decor"}
+q_src = read("Quests.luau")
+for m in re.finditer(r'\n\t(\w+) = \{\n(.*?)\n\t\},', q_src, re.S):
+    qid, body = m.groups()
+    ev = re.search(r'event = "(\w+)"', body)
+    if not ev or ev.group(1) not in KNOWN_EVENTS:
+        errors.append(f"Quest {qid}: unknown event '{ev.group(1) if ev else None}'")
+    inf = re.search(r'influence = "(\w+)"', body)
+    if inf and inf.group(1) not in TRAITS:
+        errors.append(f"Quest {qid}: unknown trait '{inf.group(1)}'")
+    bio = re.search(r'biome = "(\w+)"', body)
+    if bio and bio.group(1) not in BIOME_IDS:
+        errors.append(f"Quest {qid}: unknown biome '{bio.group(1)}'")
+
+# ── Trials ────────────────────────────────────────────────────────────────────
+t_src = read("Trials.luau")
+for fav in re.findall(r'favours = \{([^}]*)\}', t_src):
+    for t in re.findall(r'"(\w+)"', fav):
+        if t not in TRAITS:
+            errors.append(f"Trial favours unknown trait '{t}'")
 
 # ── Reachability: can every mutation actually be reached by feeding? ──────────
 reachable_max = {t: 0 for t in TRAITS}

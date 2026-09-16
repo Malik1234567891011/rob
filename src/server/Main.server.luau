@@ -168,6 +168,47 @@ Net.func("SetSetting").OnServerInvoke = function(player, key, value)
 	return { ok = true }
 end
 
+-- Quick travel (mobile players should not walk 400 studs to get home). Destinations are
+-- markers the world builder places: Workspace.World.Markers.Travel_<Id>.
+local travelCooldown: { [number]: number } = {}
+Net.func("Travel").OnServerInvoke = function(player, destination)
+	if type(destination) ~= "string" then
+		return { ok = false }
+	end
+	if TrialService.inTrial(player) then
+		return { ok = false, reason = "finish your trial first" }
+	end
+	if (travelCooldown[player.UserId] or 0) > os.clock() then
+		return { ok = false, reason = "one moment…" }
+	end
+	local char = player.Character
+	if not char then
+		return { ok = false }
+	end
+	local cf: CFrame? = nil
+	if destination == "Home" then
+		cf = SanctuaryService.spawnCF(player)
+	else
+		local world = workspace:FindFirstChild("World")
+		local markers = world and world:FindFirstChild("Markers")
+		local m = markers and markers:FindFirstChild("Travel_" .. destination) :: BasePart?
+		if destination == "Ocean" then
+			local ws = game:GetService("ReplicatedStorage"):FindFirstChild("WorldState")
+			if not ws or (ws:GetAttribute("UpdateLevel") or 0) < 1 then
+				return { ok = false, reason = "coming soon" }
+			end
+		end
+		cf = m and (m.CFrame + Vector3.new(0, 3, 0)) or nil
+	end
+	if not cf then
+		return { ok = false, reason = "that place isn't built yet" }
+	end
+	travelCooldown[player.UserId] = os.clock() + 2
+	char:PivotTo(cf)
+	GameEvents.fire(player, "biome_enter", { biome = destination })
+	return { ok = true }
+end
+
 -- ═══ START ORDER ═════════════════════════════════════════════════════════════
 -- WorldState (DailyService) must exist before Parade/Events/Global publish to it; Sanctuary
 -- must assign plots before the FTUE places eggs.

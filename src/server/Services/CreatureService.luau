@@ -247,6 +247,7 @@ function CreatureService.refresh(player: Player, reveal: any?)
 
 	nameplate(model, genome)
 	petPrompt(model, player)
+	CreatureService.stampAbilities(player)
 
 	local body = Anatomy.bodies[genome.bodyFamily] or Anatomy.bodies.Cute
 	active[player.UserId] = {
@@ -267,6 +268,24 @@ function CreatureService.refresh(player: Player, reveal: any?)
 		heading = cf.LookVector,
 	}
 	return model
+end
+
+-- What the active creature lets the player DO (read by the client MovementController and
+-- AmbienceController). SPEC §11: abilities change the route, not a stat screen.
+local ABILITY_ATTR = {
+	Glide = "CanGlide", Sticky = "CanClimb", Ghost = "CanGhost", Tiny = "CanTiny",
+	Aquatic = "CanSwim", Heatproof = "CanHeat", Light = "CanLight",
+}
+function CreatureService.stampAbilities(player: Player)
+	local char = player.Character
+	if not char then
+		return
+	end
+	local genome = PlayerDataService.activeCreature(player)
+	local abilities = genome and genome.abilities or {}
+	for ability, attr in pairs(ABILITY_ATTR) do
+		char:SetAttribute(attr, abilities[ability] == true or nil)
+	end
 end
 
 function CreatureService.get(player: Player): Model?
@@ -468,6 +487,16 @@ function CreatureService.start()
 	Players.PlayerRemoving:Connect(function(player)
 		CreatureService.despawn(player)
 	end)
+	Players.PlayerAdded:Connect(function(player)
+		player.CharacterAdded:Connect(function()
+			task.defer(CreatureService.stampAbilities, player)
+		end)
+	end)
+	for _, player in ipairs(Players:GetPlayers()) do
+		player.CharacterAdded:Connect(function()
+			task.defer(CreatureService.stampAbilities, player)
+		end)
+	end
 
 	PlayerDataService.onLoaded(function(player, profile)
 		if profile.activeCreature > 0 and profile.creatures[profile.activeCreature] then

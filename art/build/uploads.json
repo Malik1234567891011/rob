@@ -69,6 +69,20 @@
     "sha": "8f8978ce1781e75e",
     "type": "Model"
   },
+  "art/build/kit_junk.fbx": {
+    "assetId": "86522920259261",
+    "at": 1789583716,
+    "name": "FAM kit junk",
+    "sha": "d48441a53eb2e468",
+    "type": "Model"
+  },
+  "art/build/kit_meadow.fbx": {
+    "assetId": "72007994409053",
+    "at": 1789583656,
+    "name": "FAM kit meadow",
+    "sha": "35f10fce6f471765",
+    "type": "Model"
+  },
   "art/build/probe_ear.fbx": {
     "assetId": "120540404644340",
     "at": 1789545210,
@@ -91,10 +105,10 @@
     "type": "Model"
   },
   "art/build/sync.rbxmx": {
-    "assetId": "88286884319203",
-    "at": 1789549599,
+    "assetId": "136420737746072",
+    "at": 1789550303,
     "name": "FAM code sync",
-    "sha": "9f6a44c88b8e95b5",
+    "sha": "d6176ad386a28e06",
     "type": "Model"
   },
   "art/build/weird_body_Blocky.fbx": {

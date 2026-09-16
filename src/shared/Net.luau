@@ -53,6 +53,7 @@ Net.FUNCTIONS = {
 	"SwitchCreature",
 	"NewEgg",
 	"SetSetting",
+	"Travel",
 }
 
 local folderName = "Net"

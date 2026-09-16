@@ -24,3 +24,4 @@ tools/__pycache__/
 art/build/*.fbx
 art/build/*.png
 art/build/sync.rbxmx
+art/previews/*.png

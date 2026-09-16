@@ -476,6 +476,24 @@ function WorldService.start()
 	end
 	if worldState then
 		worldState:GetAttributeChangedSignal("UpdateLevel"):Connect(oceanLock)
+		-- SPEC §76: Update 1 ships dark and opens itself on schedule (Config/Release)
+		local Release = require(Shared.Config:WaitForChild("Release"))
+		local function applyRelease()
+			local level = Release.levelAt(os.time())
+			if level > updateLevel() then
+				worldState:SetAttribute("UpdateLevel", level)
+				if level >= 1 then
+					Net.event("WorldNotice"):FireAllClients({ kind = "update_live", level = level })
+				end
+			end
+		end
+		applyRelease()
+		task.spawn(function()
+			while true do
+				task.wait(60)
+				applyRelease()
+			end
+		end)
 	end
 	oceanLock()
 	Net.func("TryGate").OnServerInvoke = function(player, gateId)

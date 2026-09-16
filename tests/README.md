@@ -19,6 +19,10 @@ Last run: 22 passed, 0 failed.
 `DevEvents.server.luau` runs all eight world events with 8-second durations: each starts,
 puts things in the world, ends, cleans up, and logs no errors. Last run: 51 passed, 0 failed.
 
+`DevUpdate1.server.luau` flips `WorldState.UpdateLevel` to 1 on a live server: Ocean lock
+lifts, reef gate builds + opens with Aquatic, ocean foods spawn, an ocean diet grows Gills,
+Swim trial becomes joinable. Last run: 11 passed, 0 failed.
+
 `DevTiming.server.luau` measures non-negotiable #1 (first feed ≤ 15 s).
 
 All of these are Scripts with `Disabled = true`; enable ONE at a time (they share the

@@ -129,11 +129,18 @@ def parse_args():
     ap.add_argument("--no-sheet", action="store_true")
     ap.add_argument("--engine", default="", help="force BLENDER_EEVEE or BLENDER_WORKBENCH")
     ap.add_argument("--save-blend", default="", help="optional .blend path to save the rebuilt scene")
+    ap.add_argument("--cam", action="append", default=[],
+                    help='ad-hoc view in Roblox coords: name=px,py,pz:lx,ly,lz[:fov] (repeatable)')
     ap.add_argument("--list", action="store_true", help="print view names and exit")
     a = ap.parse_args(argv)
     if a.list:
         print("\n".join(VIEWS))
         sys.exit(0)
+    for spec in a.cam:
+        name, _, rest = spec.partition("=")
+        bits = rest.split(":")
+        VIEWS[name] = (tuple(float(v) for v in bits[0].split(",")), tuple(float(v) for v in bits[1].split(",")),
+                       float(bits[2]) if len(bits) > 2 else 70)
     a.view_list = [v.strip() for v in a.views.split(",") if v.strip()] or list(VIEWS)
     bad = [v for v in a.view_list if v not in VIEWS]
     if bad:
@@ -353,7 +360,7 @@ def setup_render(args):
     for k, v in (("taa_render_samples", args.samples), ("use_shadows", True), ("shadow_ray_count", 1),
                  ("shadow_step_count", 6), ("use_raytracing", False), ("use_fast_gi", False),
                  ("use_gtao", True), ("gtao_distance", 6.0), ("use_volumetric_shadows", False),
-                 ("shadow_resolution_scale", 1.0)):
+                 ("shadow_resolution_scale", 1.0), ("shadow_pool_size", "2048")):
         try:
             setattr(ee, k, v)
         except Exception:
@@ -845,10 +852,62 @@ def build_terrain_region(reg, names, mats, coll):
     I, J = np.meshgrid(np.arange(nz - 1), np.arange(nx), indexing="ij")
     skirts(valid[:-1, :] & valid[1:, :], np.s_[1:nz, 0:nx], np.s_[1:nz, 1:nx + 1], (I, J), (I + 1, J))
 
+    # the raycast only saw the floating terrain's top, so the sea floor + water beneath it are
+    # missing: fill them in from the surrounding ground
+    Wsrc = W
+    cut = allv & ~drawn
+    if valid.all() and (floating.any() or cut.any()):
+        fq = floating | cut
+        fv = np.zeros((nz, nx), bool)
+        mid = (qmax + qmin) / 2
+        for k, (di, dj) in enumerate(((0, 0), (0, 1), (1, 0), (1, 1))):
+            high = cut & (np.nan_to_num(q[k]) > np.nan_to_num(mid))
+            fv[di:nz - 1 + di, dj:nx - 1 + dj] |= floating | high
+        Hl = np.where(fv, np.nan, H)
+        Wl = np.where(fv, np.nan, W)
+        Cl = np.where(fv[..., None], np.nan, vcol)
+        for _ in range(80):
+            holes = np.isnan(Hl)
+            if not holes.any():
+                break
+            acc = np.zeros_like(Hl)
+            wacc = np.zeros_like(Hl)
+            cacc = np.zeros_like(Cl)
+            n = np.zeros_like(Hl)
+            wn = np.zeros_like(Hl)
+            for sl_to, sl_from in ((np.s_[1:, :], np.s_[:-1, :]), (np.s_[:-1, :], np.s_[1:, :]),
+                                   (np.s_[:, 1:], np.s_[:, :-1]), (np.s_[:, :-1], np.s_[:, 1:])):
+                src = Hl[sl_from]
+                ok = ~np.isnan(src)
+                acc[sl_to] += np.where(ok, src, 0)
+                cacc[sl_to] += np.where(ok[..., None], Cl[sl_from], 0)
+                n[sl_to] += ok
+                wsrc = Wl[sl_from]
+                wok = ~np.isnan(wsrc)
+                wacc[sl_to] += np.where(wok, wsrc, 0)
+                wn[sl_to] += wok
+            grow = holes & (n > 0)
+            Hl[grow] = acc[grow] / n[grow]
+            Cl[grow] = cacc[grow] / n[grow][:, None]
+            wgrow = np.isnan(Wl) & (wn > 0) & fv
+            Wl[wgrow] = wacc[wgrow] / wn[wgrow]
+        Wsrc = np.where(fv & np.isnan(W), Wl, W)
+        lv = np.zeros((nz, nx), bool)
+        for di in (0, 1):
+            for dj in (0, 1):
+                lv[di:nz - 1 + di, dj:nx - 1 + dj] |= fq
+        lv &= ~np.isnan(Hl)
+        lid = -np.ones((nz, nx), np.int64)
+        lid[lv] = np.arange(lv.sum())
+        li, lj = np.nonzero(fq & lv[:-1, :-1] & lv[:-1, 1:] & lv[1:, :-1] & lv[1:, 1:])
+        add(np.stack([-X[lv], Z[lv], Hl[lv]], 1), np.nan_to_num(Cl[lv]),
+            np.stack([lid[li, lj], lid[li + 1, lj], lid[li + 1, lj + 1], lid[li, lj + 1]], 1))
+
     t = mesh_from_arrays("Terrain_" + reg["name"], np.concatenate(verts), np.concatenate(faces),
                          np.concatenate(cols), mats["terrain"], coll)
 
     # water: dilate one cell so the surface reaches under the shoreline slope
+    W = Wsrc
     Wd = W.copy()
     for di, dj in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)):
         sh = np.full_like(W, np.nan)

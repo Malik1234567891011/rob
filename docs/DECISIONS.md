@@ -162,3 +162,29 @@ Verified on a probe tail (asset 95511196423061):
   answers on `DevResult`. Snippet: `tools/studio/devbus.luau`. Studio only.
 - **Studio held fixes that git did not** (see memory `studio-git-drift`): the first bulk sync
   overwrote them. Edit `src/` only; push one way.
+
+---
+
+## World + systems findings (2026-09-16, afternoon)
+
+- **StreamingEnabled is on.** A far-away Model can exist on the client with NO parts, and
+  `Model.PrimaryPart` is nil until its mesh streams in. Anything client-side that reads a
+  world model (spinners, gate reveals) must wait for or poll the part. A mesh that streams
+  out and back in is a FRESH server copy, so client-only changes (a rolled-away boulder)
+  must be re-applied, which is why WorldFxController tracks the mesh instance.
+- **One throwing controller used to kill the whole client** (ClientMain ran starts in
+  sequence). Every controller now boots under `pcall`.
+- **Raycasts from the sky hit the mountain, not the cave floor.** WorldBuilder uses a
+  `rayFrom` height that drops below the cavern ceiling while it dresses the cave interior.
+- **`screen_capture` needs the Studio window rendering.** When another app covers the
+  window, the viewport is 1×1 and captures hang. ProximityPrompts also never show, so
+  `user_keyboard_input` E presses do nothing. Test through services and remotes instead,
+  and review visuals with `tools/blender/world_preview.py`.
+- **execute_luau results over ~100 KB are saved to a file** (tool-results/*.txt). That is a
+  cheap way to move large data from Studio to disk: return it in ≤ 90 KB chunks.
+- **Gates are per-player and client-visual.** The server records `gatesOpened` and grants
+  rewards. The client animates that player's gate (boulder rolls, vines grow, generator
+  lights). Other players still see it closed until they open it themselves.
+- **Update 1 ships dark.** `Config/Release` holds the level and an optional unlock time.
+  WorldService polls once a minute, and the Ocean lock, reef gate, ocean spawns and Swim
+  trial all open live.

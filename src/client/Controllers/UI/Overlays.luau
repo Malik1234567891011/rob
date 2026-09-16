@@ -385,6 +385,15 @@ function Overlays.notice(p)
 		flash(Color3.fromRGB(220, 180, 255))
 	elseif k == "meteor_cracked" then
 		ctx.effects.play("SecretSting")
+	elseif k == "update_live" then
+		-- SPEC §76: "SOMETHING IS IN THE OCEAN." Players learn "oh, this game updates."
+		ctx.effects.play("SecretSting")
+		flash(Color3.fromRGB(120, 200, 255))
+		task.spawn(function()
+			local ui = require(script.Parent.Parent:WaitForChild("UIController"))
+			ui.banner("🌊 SOMETHING IS IN THE OCEAN", Theme.accent.party, 8)
+		end)
+		ctx.toast({ kind = "quest", title = "THE OCEAN IS OPEN", label = "🌊 New foods, new mutations, a new trial.", sub = "Travel there from Home.", color = 0x3FA7E0 })
 	elseif k == "abducted" then
 		task.spawn(function()
 			local ui = require(script.Parent.Parent:WaitForChild("UIController"))

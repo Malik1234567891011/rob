@@ -18,6 +18,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Net = require(Shared:WaitForChild("Net"))
 local Mutations = require(Shared.Config:WaitForChild("Mutations"))
 local Economy = require(Shared.Config:WaitForChild("Economy"))
+local Ingredients = require(Shared.Config:WaitForChild("Ingredients"))
 
 local PlayerDataService = require(script.Parent.PlayerDataService)
 local GameEvents = require(script.Parent.GameEvents)
@@ -37,6 +38,51 @@ local board = {
 
 local function today(): number
 	return math.floor(os.time() / 86400)
+end
+
+-- SPEC §78 "Unsolved: ??? + Battery + Star Fragment". Each day one undiscovered secret
+-- gets a partial recipe: the strongest ingredient for each of its required traits, with
+-- the most important one hidden. Enough to start a rumour, never enough to solve it.
+local function unsolvedHint(): { string }?
+	local open = {}
+	for _, id in ipairs(Mutations.order or {}) do
+		local def = Mutations.get(id)
+		if def and def.secret and not board.firsts[id] and def.requirements then
+			table.insert(open, id)
+		end
+	end
+	if #open == 0 then
+		return nil
+	end
+	local def = Mutations.get(open[(today() % #open) + 1])
+	local reqs = {}
+	for trait, need in pairs(def.requirements) do
+		table.insert(reqs, { trait = trait, need = need })
+	end
+	table.sort(reqs, function(a, b)
+		return a.need > b.need
+	end)
+	local out = {}
+	for i, r in ipairs(reqs) do
+		if i > 3 then
+			break
+		end
+		if i == 1 then
+			table.insert(out, "???")
+		else
+			local best, bestV = nil, 0
+			for id, ing in pairs(Ingredients.all) do
+				local v = ing.influences and ing.influences[r.trait] or 0
+				if v > bestV or (v == bestV and best and id < best) then
+					best, bestV = id, v
+				end
+			end
+			if best then
+				table.insert(out, best)
+			end
+		end
+	end
+	return #out >= 2 and out or nil
 end
 
 local function publish()
@@ -68,6 +114,7 @@ local function publish()
 		mostEatenToday = top, mostEatenCount = topN,
 		firsts = { table.unpack(firsts, 1, math.min(#firsts, 8)) },
 		undiscoveredSecrets = Mutations.secretCount() - secretsFound,
+		unsolved = unsolvedHint(),
 		largest = board.largest,
 	}))
 end

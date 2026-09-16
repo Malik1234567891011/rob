@@ -156,6 +156,14 @@ function QuestsPanel.build(body: Frame, ctx)
 					Theme.text({ text = string.format("🔥 Most eaten today: %s %s", most.emoji, most.display), textSize = 15, parent = bc, order = 2, auto = true })
 				end
 				Theme.text({ text = string.format("❓ Undiscovered secrets: <b>%d</b>", board.undiscoveredSecrets or 0), textSize = 15, parent = bc, order = 3, auto = true })
+				if type(board.unsolved) == "table" then
+					local bits = {}
+					for _, id in ipairs(board.unsolved) do
+						local ing = id ~= "???" and Ingredients.get(id)
+						table.insert(bits, ing and (ing.emoji .. " " .. ing.display) or "<b>???</b>")
+					end
+					Theme.text({ text = "🧪 Unsolved: " .. table.concat(bits, " + "), textSize = 15, parent = bc, order = 3, auto = true })
+				end
 				if board.largest then
 					Theme.text({ text = string.format("🦖 Largest monster: %s — Gen %d (%s)", board.largest.name or "???", board.largest.gen or 1, board.largest.owner or ""),
 						textSize = 15, parent = bc, order = 4, auto = true })

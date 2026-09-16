@@ -89,10 +89,25 @@ local function groundHit(x: number, z: number, fromY: number?): RaycastResult?
 	return workspace:Raycast(Vector3.new(x, (fromY or rayFrom), z), Vector3.new(0, -600, 0), params)
 end
 
+-- tiny decor is pure dressing: no shadows (hundreds of them), never hit by rays or touches
+local SMALL_DECOR = { "GrassTuft", "FlowerPatch", "Reeds", "LilyPad", "GlowMushroom", "Rock_Small", "Pebble", "Tire_Single", "Crate_B" }
+local function isSmallDecor(name: string): boolean
+	for _, k in ipairs(SMALL_DECOR) do
+		if string.find(name, k, 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
 local function place(name: string, x: number, z: number, yaw: number?, parent: Instance, scale: number?, y: number?, opts: any?)
 	local gy = y or ground(x, z)
 	local o = opts or {}
 	o.scale = scale
+	if isSmallDecor(name) then
+		o.castShadow = false
+		o.query = false
+	end
 	return Kit.place(name, CFrame.new(x, gy, z) * CFrame.Angles(0, math.rad(yaw or rng:NextNumber(0, 360)), 0), parent, o)
 end
 

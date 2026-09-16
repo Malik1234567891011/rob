@@ -58,6 +58,9 @@ SEA_EXTENT = (-1100, 1100, -1150, 1100)  # x0, x1, z0, z1 of the Roblox sea fill
 CUT = 60.0                # a grid quad spanning more height than this is a discontinuity (floating island edge)
 SKIRT_MAX = 60.0          # skirt depth under a floating edge
 SKIRT_VOID = 8.0          # skirt depth where terrain ends at void
+UNDER_EDGE = 2.5          # floating terrain: thickness at its rim
+UNDER_SLOPE = 1.1         # ...growing by this many studs per stud inward
+UNDER_MAX = 70.0
 
 S15, C15 = math.sin(math.radians(15)), math.cos(math.radians(15))
 # plot k=0 per WorldBuilder.plots(): angle 15 deg, pos = (cos a * 205, 0, sin a * 205)
@@ -76,6 +79,12 @@ VIEWS = {
     "strange": ((120, 300, -700), (0, 240, -820), 70),
     "trials_race": ((2150, 80, -80), (2200, 0, 100), 70),
     "world_top": ((0, 1400, -100), (0, 0, -120), 78),
+    # extra close-ups: the places a player actually stands
+    "hub_ground": ((22, 9, 34), (0, 5, -50), 70),
+    "meadow_road": ((180, 26, 26), (300, 6, -6), 70),
+    "caves_entrance": ((14, 22, -262), (0, 10, -312), 70),
+    "junk_towers": ((-430, 34, 100), (-475, 10, 138), 70),
+    "trials_obstacle": ((2262, 50, 1470), (2200, 6, 1640), 70),
 }
 
 # 5-stud character stand-ins (Roblox x, z) so scale reads at a glance
@@ -304,9 +313,9 @@ def make_materials():
 
     # water
     mat, nt = new_material("WP_Water")
-    b = principled(nt, 0.12, 0.5)
+    b = principled(nt, 0.32, 0.3)
     b.inputs["Base Color"].default_value = (*hex_lin(WATER_HEX), 1)
-    b.inputs["Alpha"].default_value = 0.68
+    b.inputs["Alpha"].default_value = 0.7
     mats["water"] = finish(mat, b.outputs[0])
 
     # reference figures
@@ -321,8 +330,9 @@ def make_materials():
     nt.links.new(em.outputs[0], add.inputs[1])
     mats["ref"] = finish(mat, add.outputs[0])
 
-    for m in mats.values():
-        for attr_name, val in (("surface_render_method", "DITHERED"), ("use_backface_culling", False)):
+    for key, m in mats.items():
+        method = "BLENDED" if key == "water" else "DITHERED"   # blended: no dither grain on the sea
+        for attr_name, val in (("surface_render_method", method), ("use_backface_culling", False)):
             try:
                 setattr(m, attr_name, val)
             except Exception:
@@ -690,6 +700,26 @@ def mesh_from_arrays(name, verts, faces, colors, mat, coll, smooth=True):
     return o
 
 
+def label_components(mask):
+    """4-connected component labels over a boolean grid (min-index propagation + pointer jumping)."""
+    idx = np.arange(mask.size, dtype=np.int64).reshape(mask.shape)
+    lab = np.where(mask, idx, -1)
+    for _ in range(4000):
+        old = lab.copy()
+        for a, b, both in ((np.s_[:, :-1], np.s_[:, 1:], mask[:, :-1] & mask[:, 1:]),
+                           (np.s_[:-1, :], np.s_[1:, :], mask[:-1, :] & mask[1:, :])):
+            m = np.minimum(lab[a], lab[b])
+            lab[a] = np.where(both, m, lab[a])
+            lab[b] = np.where(both, m, lab[b])
+        flat = lab.ravel()
+        good = flat >= 0
+        flat[good] = flat[flat[good]]
+        lab = flat.reshape(mask.shape)
+        if np.array_equal(lab, old):
+            break
+    return lab
+
+
 def build_terrain_region(reg, names, mats, coll):
     H, W, Mi, st = reg["H"], reg["W"], reg["M"], reg["st"]
     nz, nx = H.shape
@@ -703,35 +733,95 @@ def build_terrain_region(reg, names, mats, coll):
 
     q = np.stack([H[:-1, :-1], H[:-1, 1:], H[1:, :-1], H[1:, 1:]])
     allv = ~np.isnan(q).any(0)
-    with np.errstate(invalid="ignore"):
-        qmax = np.where(allv, np.nanmax(np.where(np.isnan(q), -1e9, q), 0), np.nan)
-        qmin = np.where(allv, np.nanmin(np.where(np.isnan(q), 1e9, q), 0), np.nan)
-        qmean = np.where(allv, np.nanmean(q, 0), np.nan)
+    qf = np.where(np.isnan(q), 0.0, q)
+    qmax = np.where(allv, qf.max(0), np.nan)
+    qmin = np.where(allv, qf.min(0), np.nan)
+    qmean = np.where(allv, qf.mean(0), np.nan)
     drawn = allv & ((qmax - qmin) <= CUT)
+
+    # A region with no void is one continuous heightfield (the main island + sea floor): every
+    # drawn component except the biggest is terrain floating in the air (Strange Zone island,
+    # orbiting rocks), which gets a tapered underside. Regions with void (trials) get slabs.
+    floating = np.zeros_like(drawn)
+    if valid.all() and drawn.any():
+        comp = label_components(drawn)
+        labels, counts = np.unique(comp[drawn], return_counts=True)
+        floating = drawn & (comp != labels[counts.argmax()])
 
     vid = -np.ones((nz, nx), np.int64)
     vid[valid] = np.arange(valid.sum())
-    verts = np.stack([-X[valid], Z[valid], H[valid]], 1)
-    cols = vcol[valid]
+    verts = [np.stack([-X[valid], Z[valid], H[valid]], 1)]
+    cols = [vcol[valid]]
     qi, qj = np.nonzero(drawn)
-    faces = np.stack([vid[qi, qj], vid[qi + 1, qj], vid[qi + 1, qj + 1], vid[qi, qj + 1]], 1)
+    faces = [np.stack([vid[qi, qj], vid[qi + 1, qj], vid[qi + 1, qj + 1], vid[qi, qj + 1]], 1)]
+    nverts = [len(verts[0])]
+    ntop = len(faces[0])
+
+    def add(v, c, f):
+        verts.append(v)
+        cols.append(c)
+        faces.append(f + nverts[0])
+        nverts[0] += len(v)
+
+    # tapered undersides for floating components
+    nunder = 0
+    if floating.any():
+        D = np.where(floating, np.inf, np.inf)
+        edge = floating.copy()
+        inner = floating.copy()
+        inner[1:, :] &= floating[:-1, :]
+        inner[:-1, :] &= floating[1:, :]
+        inner[:, 1:] &= floating[:, :-1]
+        inner[:, :-1] &= floating[:, 1:]
+        inner[0, :] = inner[-1, :] = inner[:, 0] = inner[:, -1] = False
+        edge = floating & ~inner
+        D[edge] = 0
+        for _ in range(60):
+            nb = np.full_like(D, np.inf)
+            nb[1:, :] = np.minimum(nb[1:, :], D[:-1, :])
+            nb[:-1, :] = np.minimum(nb[:-1, :], D[1:, :])
+            nb[:, 1:] = np.minimum(nb[:, 1:], D[:, :-1])
+            nb[:, :-1] = np.minimum(nb[:, :-1], D[:, 1:])
+            newD = np.where(floating, np.minimum(D, nb + 1), np.inf)
+            if np.array_equal(newD, D):
+                break
+            D = newD
+        Dv = np.full((nz + 1, nx + 1), np.inf)
+        for di in (0, 1):
+            for dj in (0, 1):
+                Dv[di:nz - 1 + di, dj:nx - 1 + dj] = np.minimum(Dv[di:nz - 1 + di, dj:nx - 1 + dj], D)
+        Dv = Dv[:nz, :nx]
+        uv = np.isfinite(Dv) & valid
+        uid = -np.ones((nz, nx), np.int64)
+        uid[uv] = np.arange(uv.sum())
+        depth = np.clip(UNDER_EDGE + UNDER_SLOPE * Dv[uv] * st, UNDER_EDGE, UNDER_MAX)
+        ubot = np.stack([-X[uv], Z[uv], H[uv] - depth], 1)
+        fi, fj = np.nonzero(floating)
+        uf = np.stack([uid[fi, fj], uid[fi, fj + 1], uid[fi + 1, fj + 1], uid[fi + 1, fj]], 1)
+        add(ubot, vcol[uv] * 0.4, uf)
+        nunder = len(uf)
 
     # skirts: vertical strips under terrain edges that end at void or at a big height jump
     def pad(a, fill):
         out = np.full((nz + 1, nx + 1), fill, dtype=a.dtype)
         out[1:-1, 1:-1] = a
         return out
-    Dp, Ap, MINp, MEANp = pad(drawn, False), pad(allv, False), pad(qmin, np.nan), pad(qmean, np.nan)
-    sk_v, sk_c, sk_f = [], [], []
+    Dp, Ap, Fp = pad(drawn, False), pad(allv, False), pad(floating, False)
+    MINp, MEANp = pad(qmin, np.nan), pad(qmean, np.nan)
+    nskirt = [0]
 
-    def skirts(ev, A_d, B_d, A_all, B_all, A_min, B_min, A_mean, B_mean, p0, p1):
+    def skirts(ev, A, B, p0, p1):
+        A_d, B_d = Dp[A], Dp[B]
         need = ev & (A_d != B_d)
-        u_all = np.where(A_d, B_all, A_all)
-        u_min = np.where(A_d, B_min, A_min)
-        u_mean = np.where(A_d, B_mean, A_mean)
+        u_all = np.where(A_d, Ap[B], Ap[A])
+        u_min = np.where(A_d, MINp[B], MINp[A])
+        u_mean = np.where(A_d, MEANp[B], MEANp[A])
+        d_float = np.where(A_d, Fp[A], Fp[B])
         e_mean = (H[p0] + H[p1]) / 2
-        depth = np.where(u_all, np.clip(e_mean - u_min, 0, SKIRT_MAX), SKIRT_VOID)
-        keep = need & np.where(u_all, e_mean > u_mean + 1.0, True) & (depth > 0.5)
+        with np.errstate(invalid="ignore"):
+            cliff = np.clip(e_mean - u_min, 0, SKIRT_MAX)
+            depth = np.where(d_float, UNDER_EDGE, np.where(u_all, cliff, SKIRT_VOID))
+            keep = need & np.where(u_all, e_mean > u_mean + 1.0, True) & (depth > 0.5)
         idx = np.nonzero(keep)
         if not len(idx[0]):
             return
@@ -739,34 +829,24 @@ def build_terrain_region(reg, names, mats, coll):
         b = tuple(ix[idx] for ix in p1)
         d = depth[idx]
         n = len(d)
-        base = sum(len(v) for v in sk_v) + len(verts)
         va = np.stack([-X[a], Z[a], H[a]], 1)
         vb = np.stack([-X[b], Z[b], H[b]], 1)
         vbd, vad = vb.copy(), va.copy()
         vbd[:, 2] -= d
         vad[:, 2] -= d
-        sk_v.append(np.concatenate([va, vb, vbd, vad]))
         ca, cb = vcol[a], vcol[b]
-        sk_c.append(np.concatenate([ca * 0.62, cb * 0.62, cb * 0.42, ca * 0.42]))
         k = np.arange(n)
-        sk_f.append(np.stack([base + k, base + n + k, base + 2 * n + k, base + 3 * n + k], 1))
+        add(np.concatenate([va, vb, vbd, vad]), np.concatenate([ca * 0.62, cb * 0.62, cb * 0.42, ca * 0.42]),
+            np.stack([k, n + k, 2 * n + k, 3 * n + k], 1))
+        nskirt[0] += n
 
     I, J = np.meshgrid(np.arange(nz), np.arange(nx - 1), indexing="ij")
-    skirts(valid[:, :-1] & valid[:, 1:],
-           Dp[0:nz, 1:nx], Dp[1:nz + 1, 1:nx], Ap[0:nz, 1:nx], Ap[1:nz + 1, 1:nx],
-           MINp[0:nz, 1:nx], MINp[1:nz + 1, 1:nx], MEANp[0:nz, 1:nx], MEANp[1:nz + 1, 1:nx],
-           (I, J), (I, J + 1))
+    skirts(valid[:, :-1] & valid[:, 1:], np.s_[0:nz, 1:nx], np.s_[1:nz + 1, 1:nx], (I, J), (I, J + 1))
     I, J = np.meshgrid(np.arange(nz - 1), np.arange(nx), indexing="ij")
-    skirts(valid[:-1, :] & valid[1:, :],
-           Dp[1:nz, 0:nx], Dp[1:nz, 1:nx + 1], Ap[1:nz, 0:nx], Ap[1:nz, 1:nx + 1],
-           MINp[1:nz, 0:nx], MINp[1:nz, 1:nx + 1], MEANp[1:nz, 0:nx], MEANp[1:nz, 1:nx + 1],
-           (I, J), (I + 1, J))
-    if sk_v:
-        verts = np.concatenate([verts] + sk_v)
-        cols = np.concatenate([cols] + sk_c)
-        faces = np.concatenate([faces] + sk_f)
-    t = mesh_from_arrays("Terrain_" + reg["name"], verts, faces, cols, mats["terrain"], coll)
-    nskirt = sum(len(f) for f in sk_f)
+    skirts(valid[:-1, :] & valid[1:, :], np.s_[1:nz, 0:nx], np.s_[1:nz, 1:nx + 1], (I, J), (I + 1, J))
+
+    t = mesh_from_arrays("Terrain_" + reg["name"], np.concatenate(verts), np.concatenate(faces),
+                         np.concatenate(cols), mats["terrain"], coll)
 
     # water: dilate one cell so the surface reaches under the shoreline slope
     Wd = W.copy()
@@ -785,7 +865,7 @@ def build_terrain_region(reg, names, mats, coll):
         qi, qj = np.nonzero(wq)
         wfaces = np.stack([wid[qi, qj], wid[qi + 1, qj], wid[qi + 1, qj + 1], wid[qi, qj + 1]], 1)
         mesh_from_arrays("Water_" + reg["name"], wverts, wfaces, None, mats["water"], coll, smooth=False)
-    return t, len(faces) - nskirt, nskirt, nwater
+    return t, ntop, nskirt[0], nunder, nwater
 
 
 def build_outer_sea(regions, mats, coll):
@@ -976,7 +1056,7 @@ def make_sheet(out_dir):
         return
     py = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else "python3"
     try:
-        r = subprocess.run([py, "-c", SHEET_PY, os.path.join(out_dir, "_sheet.jpg"), "3", "640"] + items,
+        r = subprocess.run([py, "-c", SHEET_PY, os.path.join(out_dir, "_sheet.jpg"), "4", "640"] + items,
                            capture_output=True, text=True, timeout=120)
         log((r.stdout + r.stderr).strip() or "sheet done")
     except Exception as e:
@@ -1008,8 +1088,8 @@ def main():
 
     names, regions = read_terrain(os.path.join(args.export, "terrain.txt"))
     for reg in regions:
-        _, nf, ns, nw = build_terrain_region(reg, names, mats, world_coll)
-        log("terrain %s: %d faces, %d skirt faces, %d water quads" % (reg["name"], nf, ns, nw))
+        _, nf, ns, nu, nw = build_terrain_region(reg, names, mats, world_coll)
+        log("terrain %s: %d faces, %d skirt, %d floating-underside, %d water quads" % (reg["name"], nf, ns, nu, nw))
     build_outer_sea(regions, mats, world_coll)
     if not args.no_refs:
         log("reference figures:", build_refs(regions, parts, mats, world_coll))

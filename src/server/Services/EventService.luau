@@ -286,7 +286,8 @@ handlers.SlimeInvasion = function(duration)
 			s.Name = "InvaderSlime"
 			local stolen = RAIN_POOL[math.random(1, #RAIN_POOL)]
 			s:SetAttribute("Stolen", stolen)
-			s:PivotTo(CFrame.new(jitter(center, 40)))
+			local ext = s:GetExtentsSize()
+			s:PivotTo(CFrame.new(groundAt(jitter(center, 40)) + Vector3.new(0, ext.Y * 0.5, 0)))
 			s.Parent = runtime
 			local prompt = Instance.new("ProximityPrompt")
 			prompt.ActionText = "Catch"
@@ -325,7 +326,7 @@ handlers.SlimeInvasion = function(duration)
 				dir = Vector3.new(dir.X, 0, dir.Z)
 				if dir.Magnitude > 0.01 then
 					local nextP = groundAt(pos + dir.Unit * (nearest and 7 or 3))
-					s:PivotTo(CFrame.new(nextP + Vector3.new(0, 0.6, 0)))
+					s:PivotTo(CFrame.new(nextP + Vector3.new(0, s:GetExtentsSize().Y * 0.5, 0)))
 				end
 			end
 		end

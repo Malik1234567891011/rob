@@ -23,6 +23,7 @@ PartyService.MAX = 4
 
 local partyOf: { [Player]: { Player } } = {}
 local invites: { [Player]: { from: Player, at: number } } = {}
+local inviteCooldown: { [Player]: number } = {}
 
 local function members(player: Player): { Player }
 	return partyOf[player] or { player }
@@ -48,7 +49,12 @@ function PartyService.invite(from: Player, toUserId: number)
 	if #members(from) >= PartyService.MAX then
 		return { ok = false, reason = "party is full" }
 	end
-	invites[to] = { from = from, at = os.clock() }
+	local now = os.clock()
+	if (inviteCooldown[from] or 0) > now then
+		return { ok = false, reason = "slow down" }
+	end
+	inviteCooldown[from] = now + 2
+	invites[to] = { from = from, at = now }
 	Net.event("PartyInvite"):FireClient(to, { from = from.DisplayName, userId = from.UserId })
 	return { ok = true }
 end
@@ -59,14 +65,19 @@ function PartyService.accept(player: Player)
 	if not inv or os.clock() - inv.at > 60 or not inv.from.Parent then
 		return { ok = false, reason = "invite expired" }
 	end
+	local existing = partyOf[inv.from]
+	if existing and #existing >= PartyService.MAX then
+		-- check BEFORE leaving your current party, so a full party never strands you
+		return { ok = false, reason = "party is full" }
+	end
+	if existing and table.find(existing, player) then
+		return { ok = true }
+	end
 	PartyService.leave(player)
 	local party = partyOf[inv.from]
 	if not party then
 		party = { inv.from }
 		partyOf[inv.from] = party
-	end
-	if #party >= PartyService.MAX then
-		return { ok = false, reason = "party is full" }
 	end
 	table.insert(party, player)
 	partyOf[player] = party
@@ -145,6 +156,7 @@ function PartyService.start()
 	Players.PlayerRemoving:Connect(function(p)
 		PartyService.leave(p)
 		invites[p] = nil
+		inviteCooldown[p] = nil
 	end)
 	print("[Party] ready")
 end

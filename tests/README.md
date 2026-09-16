@@ -12,9 +12,16 @@ decor, extra eggs + switching, the no-prompt-before-evolution guard, parade sign
 world events, and trials (queue → arena teleport → leave returns you home).
 Last run: 43 passed, 0 failed (2026-09-16).
 
+`DevTrials.server.luau` plays Race, Obstacle (every checkpoint, both laps), Smash (breaks
+real targets) and Treasure with short timers: queue → arena → score → results → home.
+Last run: 22 passed, 0 failed.
+
+`DevEvents.server.luau` runs all eight world events with 8-second durations: each starts,
+puts things in the world, ends, cleans up, and logs no errors. Last run: 51 passed, 0 failed.
+
 `DevTiming.server.luau` measures non-negotiable #1 (first feed ≤ 15 s).
 
-All three are Scripts with `Disabled = true`; enable ONE at a time (they share the
+All of these are Scripts with `Disabled = true`; enable ONE at a time (they share the
 playtest player) and press Play.
 
 Run it: open the place in Studio and press Play. Results print as `[ITEST] PASS/FAIL`

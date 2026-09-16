@@ -15,20 +15,51 @@ local Traits = require(Shared.Config:WaitForChild("Traits"))
 local Controllers = script.Parent:WaitForChild("Controllers")
 local UIController = require(Controllers:WaitForChild("UIController"))
 local EffectsController = require(Controllers:WaitForChild("EffectsController"))
+local CreatureController = require(Controllers:WaitForChild("CreatureController"))
+local PropBuilder = require(Shared:WaitForChild("PropBuilder"))
 
 UIController.build()
+CreatureController.start()
 
 local function myCreature(): Model?
-	local folder = workspace:FindFirstChild("Creatures")
-	if not folder then
-		return nil
+	return CreatureController.myCreature()
+end
+
+-- The food leaves the player's hand and arcs into the open mouth, timed to the lunge of
+-- the eat animation (Shared.CreatureAnimator ACTIONS.eat opens the jaw at ~0.3 s).
+local function flyFoodIntoMouth(ingredientId: string, model: Model, color: Color3)
+	local char = player.Character
+	local hand = char and (char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm") or char:FindFirstChild("HumanoidRootPart")) :: BasePart?
+	local prop = PropBuilder.build(ingredientId)
+	if not prop or not hand then
+		return
 	end
-	for _, m in ipairs(folder:GetChildren()) do
-		if m:IsA("Model") and m:GetAttribute("Owner") == player.UserId then
-			return m
+	local extents = prop:GetExtentsSize()
+	local s = math.clamp(0.9 / math.max(extents.X, extents.Y, extents.Z), 0.15, 1)
+	prop:ScaleTo(s)
+	for _, d in ipairs(prop:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanQuery = false
 		end
 	end
-	return nil
+	prop.Parent = workspace
+	local start = hand.Position
+	local t0 = os.clock()
+	local conn
+	conn = game:GetService("RunService").RenderStepped:Connect(function()
+		local t = (os.clock() - t0) / 0.34
+		local mouth = CreatureController.mouthOf(model) or start
+		if t >= 1 or not model.Parent then
+			conn:Disconnect()
+			prop:Destroy()
+			EffectsController.burstAt(mouth, color, 0.9)
+			return
+		end
+		local p = start:Lerp(mouth, t) + Vector3.new(0, math.sin(t * math.pi) * 2.2, 0)
+		prop:PivotTo(CFrame.new(p) * CFrame.Angles(t * 7, t * 5, 0))
+	end)
 end
 
 -- ═══ SERVER PUSHES ═══════════════════════════════════════════════════════════
@@ -60,11 +91,11 @@ end)
 -- SPEC §5: the eat reaction must land as a physical event, not a number.
 Net.event("Reaction").OnClientEvent:Connect(function(payload)
 	local model = myCreature()
-	local torso = model and model.PrimaryPart
-	if torso then
-		EffectsController.burstAt(torso.Position, TableUtil.unpackColor(payload.color or 0xFFD52E), 1.2)
+	local color = TableUtil.unpackColor(payload.color or 0xFFD52E)
+	if model then
+		task.delay(0.1, flyFoodIntoMouth, payload.ingredient, model, color)
 	end
-	EffectsController.play(payload.sfx, 0.08)
+	task.delay(0.46, EffectsController.play, payload.sfx, 0.08)
 end)
 
 -- ═══ INSPECTION (SPEC §24) ═══════════════════════════════════════════════════

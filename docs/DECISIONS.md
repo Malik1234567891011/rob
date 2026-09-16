@@ -136,3 +136,29 @@ Verified on a probe tail (asset 95511196423061):
 - rotating `Bone.CFrame` bends the mesh continuously — real skinning, no ball joints
 - insert comes in as a **Package** (`PackageLink`) plus an `InitialPoses` folder — strip both
   when storing templates
+
+---
+
+## Creature runtime findings (2026-09-16)
+
+- **Roblox's FBX importer drops bones nothing is weighted to.** A body only influences ~9
+  bones, so eyes/ears/legs had nothing to bind to. Every body and parts FBX now carries
+  `Rig__Sockets`: one tiny tetrahedron per bone, fully weighted. The builder skips that part;
+  the bones stay in RootPart.
+- **Bind-by-assembly verified at scale:** 143 part meshes authored once bind to all four
+  Cute head bodies. `Model:ScaleTo` scales skinned rigs correctly.
+- **Bone local Y runs along the bone.** Animator rotations are authored in root space and
+  converted per bone (`basis:Inverse() * q * basis`), so Blender roll never matters.
+  Measured signs: jaw opens with +X rotation, eyelids close at **-165°** (the lid shell is
+  authored tucked up/back), -92° is a sleepy half-lid.
+- **Bone.Transform is client-local** — the server only moves the anchored RootPart; clients
+  animate. Zero network for animation.
+- **Code sync without pasting:** `tools/sync_rbxmx.py` uploads src/ as an .rbxmx of
+  ModuleScripts, `insert_asset`, then `tools/studio/apply_sync.luau` copies each Source into
+  the live script (the MCP thread may write Source but may not reparent scripts). New
+  scripts need a `multi_edit` placeholder first.
+- **Driving the live game from the MCP:** the MCP thread cannot `Invoke` a BindableFunction
+  either, but it can set attributes. `DevHooks` listens on `ServerStorage.DevCmd` (JSON) and
+  answers on `DevResult`. Snippet: `tools/studio/devbus.luau`. Studio only.
+- **Studio held fixes that git did not** (see memory `studio-git-drift`): the first bulk sync
+  overwrote them. Edit `src/` only; push one way.

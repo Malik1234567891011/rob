@@ -28,7 +28,10 @@ local AnalyticsService = require(script.Parent.AnalyticsService)
 local FeedingService = {}
 
 local MIN_FEED_INTERVAL = 0.35 -- anti-spam; generous enough to never feel gated
+local REVEAL_DELAY = 2.05 -- seconds: the eat animation's swallow lands here
 local lastFeed: { [number]: number } = {}
+local pendingRebuild: { [number]: number } = {}
+local pendingReveal: { [number]: boolean } = {}
 
 local CreatureService -- resolved lazily to avoid a require cycle
 
@@ -167,12 +170,16 @@ function FeedingService.feed(player: Player, ingredientId: string)
 		require(script.Parent.FtueService).onFirstFeed(player)
 	end
 
-	-- eat reaction first, so the mouthfeel lands before any banner
+	-- eat reaction first, so the mouthfeel lands before any banner. Everyone nearby sees
+	-- the chomp; only the feeder gets the food flying from their hand.
+	CreatureService = CreatureService or require(script.Parent.CreatureService)
+	CreatureService.actionFor(player, "eat")
 	Net.event("Reaction"):FireClient(player, {
 		ingredient = ingredientId,
 		animation = def.reaction.animation,
 		sfx = def.reaction.sfx,
 		color = def.reaction.color or def.model.color,
+		mutated = #report.newMutations > 0,
 	})
 
 	for _, traitId in ipairs(report.newTraits) do
@@ -184,8 +191,20 @@ function FeedingService.feed(player: Player, ingredientId: string)
 		DiscoveryService.mutation(player, mutationId)
 	end
 
-	CreatureService = CreatureService or require(script.Parent.CreatureService)
-	CreatureService.refresh(player, #report.newMutations > 0)
+	-- The body change lands AFTER the swallow (ART_DIRECTION feeding beat: chomp -> cheeks
+	-- -> swallow -> wobble -> THEN mutation). Rapid feeds coalesce into one rebuild.
+	local token = (pendingRebuild[player.UserId] or 0) + 1
+	pendingRebuild[player.UserId] = token
+	local mutated = #report.newMutations > 0
+	pendingReveal[player.UserId] = pendingReveal[player.UserId] or mutated
+	task.delay(REVEAL_DELAY, function()
+		if pendingRebuild[player.UserId] ~= token or not player.Parent then
+			return
+		end
+		local reveal = pendingReveal[player.UserId]
+		pendingReveal[player.UserId] = nil
+		CreatureService.refresh(player, reveal and "celebrate" or nil)
+	end)
 
 	PlayerDataService.sync(player)
 	Net.event("CreatureSync"):FireClient(player, genome, report)
@@ -233,7 +252,7 @@ function FeedingService.evolve(player: Player)
 	end
 
 	CreatureService = CreatureService or require(script.Parent.CreatureService)
-	CreatureService.refresh(player, true)
+	CreatureService.refresh(player, "evolve")
 
 	Net.event("Evolution"):FireClient(player, {
 		stage = genome.stage,

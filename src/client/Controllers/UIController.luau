@@ -73,7 +73,7 @@ end
 local function button(props): TextButton
 	local b = Instance.new("TextButton")
 	b.Size = props.size
-	b.Position = props.position
+	b.Position = props.position or UDim2.new()
 	b.AnchorPoint = props.anchor or Vector2.new(0, 0)
 	b.BackgroundColor3 = props.bg or PAPER
 	b.AutoButtonColor = false

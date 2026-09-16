@@ -1,24 +1,31 @@
 --!strict
 -- CreatureService — the creature as a CHARACTER, not a walking multiplier.
--- SPEC §99 non-negotiable #4, and SPEC §18 (temperament drives animation, not stats).
+-- SPEC §99 non-negotiable #4, and SPEC §18 (temperament drives behaviour, not stats).
 --
--- The torso is anchored and driven directly; every other part is welded to it, so
--- moving the root moves the whole creature with no physics cost and no pushing
--- players around.
+-- Split of responsibilities (so animation costs no network):
+--   SERVER  moves the anchored RootPart along the ground, decides MOOD (sit / sleep /
+--           hide) and broadcasts one-shot ACTIONS (eat, hop, sniff, pet, celebrate...).
+--   CLIENT  CreatureController + Shared.CreatureAnimator turn that into bones: gait,
+--           look-at, blinking, chewing. Bone.Transform never replicates.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Net = require(Shared:WaitForChild("Net"))
 local CreatureBuilder = require(Shared:WaitForChild("CreatureBuilder"))
 local Traits = require(Shared.Config:WaitForChild("Traits"))
 local Progression = require(Shared.Config:WaitForChild("Progression"))
+local Anatomy = require(Shared.Config:WaitForChild("Anatomy"))
 local TableUtil = require(Shared.Util:WaitForChild("TableUtil"))
 
 local PlayerDataService = require(script.Parent.PlayerDataService)
 
 local CreatureService = {}
+
+CreatureService.TAG = "FAMCreature"
 
 local active: { [number]: any } = {}
 local container: Folder
@@ -38,68 +45,167 @@ local function ensureContainer(): Folder
 	return container
 end
 
--- SPEC §24: a stranger's monster must be inspectable at a glance.
-local function nameplate(model: Model, genome, ownerName: string)
-	local torso = model.PrimaryPart
-	if not torso then
+-- ═══ GROUND ══════════════════════════════════════════════════════════════════
+
+local groundParams = RaycastParams.new()
+groundParams.FilterType = Enum.RaycastFilterType.Exclude
+groundParams.RespectCanCollide = true
+
+local function refreshGroundFilter()
+	local exclude: { Instance } = { ensureContainer() }
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p.Character then
+			table.insert(exclude, p.Character)
+		end
+	end
+	groundParams.FilterDescendantsInstances = exclude
+end
+
+-- Height of walkable ground under (x, z), searching down from `fromY`.
+function CreatureService.groundAt(x: number, z: number, fromY: number?): number
+	local origin = Vector3.new(x, (fromY or 60) + 40, z)
+	local hit = workspace:Raycast(origin, Vector3.new(0, -400, 0), groundParams)
+	return hit and hit.Position.Y or 0
+end
+
+-- ═══ NAMEPLATE (SPEC §24) ════════════════════════════════════════════════════
+
+local function nameplate(model: Model, genome)
+	local root = model.PrimaryPart
+	if not root then
 		return
 	end
+	local height = model:GetAttribute("Height") or 2
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "Nameplate"
-	gui.Size = UDim2.fromScale(7, 2)
-	gui.StudsOffsetWorldSpace = Vector3.new(0, torso.Size.Y * 0.95 + 1.6, 0)
+	gui.Size = UDim2.fromOffset(180, 46)
+	gui.StudsOffsetWorldSpace = Vector3.new(0, height + 0.9, 0)
 	gui.AlwaysOnTop = false
-	gui.MaxDistance = 90
-	gui.Adornee = torso
-	gui.Parent = torso
+	gui.MaxDistance = 70
+	gui.LightInfluence = 0
+	gui.Adornee = root
+	gui.Parent = root
 
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.fromScale(1, 0.55)
+	label.Size = UDim2.new(1, 0, 0.58, 0)
 	label.BackgroundTransparency = 1
 	label.Font = Enum.Font.FredokaOne
 	label.TextScaled = true
 	label.TextColor3 = Color3.fromRGB(255, 255, 255)
-	label.TextStrokeTransparency = 0.35
-	label.Text = genome.name or "???"
+	label.TextStrokeTransparency = 0.45
+	label.Text = genome.name or ""
 	label.Parent = gui
 
 	local sub = Instance.new("TextLabel")
 	sub.Name = "Sub"
-	sub.Position = UDim2.fromScale(0, 0.55)
-	sub.Size = UDim2.fromScale(1, 0.45)
+	sub.Position = UDim2.fromScale(0, 0.58)
+	sub.Size = UDim2.new(1, 0, 0.42, 0)
 	sub.BackgroundTransparency = 1
-	sub.Font = Enum.Font.Gotham
+	sub.Font = Enum.Font.GothamBold
 	sub.TextScaled = true
-	sub.TextColor3 = Color3.fromRGB(226, 232, 240)
-	sub.TextStrokeTransparency = 0.5
-
+	sub.TextColor3 = Color3.fromRGB(236, 240, 246)
+	sub.TextStrokeTransparency = 0.6
 	local dom = CreatureBuilder.dominantTrait(genome)
 	local stage = Progression.stage(genome.stage or 1)
-	sub.Text = string.format("Gen %d  %s  %s",
-		genome.generation or 1, stage.emoji,
-		dom and Traits.display(dom) or "")
+	sub.Text = string.format("%s Gen %d  %s", stage.emoji, genome.generation or 1, dom and Traits.display(dom) or "")
 	sub.Parent = gui
 end
+
+-- ═══ TEMPERAMENT (SPEC §18) ══════════════════════════════════════════════════
 
 local function dominantTemperament(genome): string
 	local top = TableUtil.topN(genome.temperament or {}, 1)
 	return #top > 0 and top[1].key or "curious"
 end
 
---[[
-	Build (or rebuild) the model for a player's active creature.
-	`dramatic` plays a pop so a mutation/evolution is felt, not just seen.
-]]
-function CreatureService.refresh(player: Player, dramatic: boolean?)
-	local genome = PlayerDataService.activeCreature(player)
-	if not genome then
+-- how each temperament follows, in multiples of the creature's own length
+local FOLLOW = {
+	affectionate = { dist = 0.8, speed = 15, idleAction = "hop", idleEvery = 9 },
+	curious      = { dist = 1.3, speed = 12, idleAction = "sniff", idleEvery = 7 },
+	greedy       = { dist = 1.0, speed = 14, idleAction = "hungry", idleEvery = 10 },
+	brave        = { dist = 1.4, speed = 13, idleAction = "sniff", idleEvery = 12 },
+	mischievous  = { dist = 1.2, speed = 14, idleAction = "hop", idleEvery = 6 },
+	silly        = { dist = 1.2, speed = 13, idleAction = "stumble", idleEvery = 11 },
+	nervous      = { dist = 0.7, speed = 13, idleAction = "sniff", idleEvery = 14 },
+	lazy         = { dist = 1.8, speed = 8, idleAction = "hop", idleEvery = 30 },
+}
+
+-- ═══ ACTIONS ═════════════════════════════════════════════════════════════════
+
+-- One-shot animation for everyone nearby. The client decides whether it is close enough
+-- to bother playing it.
+function CreatureService.action(model: Model?, action: string, extra: any?)
+	if not model then
 		return
 	end
+	local id = model:GetAttribute("CreatureId")
+	if id then
+		Net.event("CreatureAction"):FireAllClients(id, action, extra)
+	end
+end
+
+function CreatureService.actionFor(player: Player, action: string, extra: any?)
+	local state = active[player.UserId]
+	if state then
+		state.lastActionAt = os.clock()
+		CreatureService.action(state.model, action, extra)
+	end
+end
+
+-- ═══ SPAWN / REBUILD ═════════════════════════════════════════════════════════
+
+local function petPrompt(model: Model, owner: Player)
+	local root = model.PrimaryPart
+	if not root then
+		return
+	end
+	local attach = Instance.new("Attachment")
+	attach.Name = "PromptAnchor"
+	attach.Position = Vector3.new(0, (model:GetAttribute("Height") or 2) * 0.6, 0)
+	attach.Parent = root
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "PetPrompt"
+	prompt.ActionText = "Pet"
+	prompt.ObjectText = ""
+	prompt.HoldDuration = 0.25
+	prompt.MaxActivationDistance = 9
+	prompt.RequiresLineOfSight = false
+	prompt.Style = Enum.ProximityPromptStyle.Default
+	prompt.KeyboardKeyCode = Enum.KeyCode.F
+	prompt.Parent = attach
+	prompt.Triggered:Connect(function(who)
+		local state = active[owner.UserId]
+		if not state or state.model ~= model then
+			return
+		end
+		if os.clock() - (state.lastPetAt or 0) < 1.2 then
+			return
+		end
+		state.lastPetAt = os.clock()
+		state.mood = nil
+		state.moodUntil = os.clock() + 6
+		CreatureService.action(model, "pet")
+		local ok, Analytics = pcall(require, script.Parent.AnalyticsService)
+		if ok then
+			Analytics.track("monster_petted", who, { own = who == owner })
+		end
+	end)
+end
+
+--[[
+	Build (or rebuild) the model for a player's active creature.
+	`reveal` names a one-shot the client plays on the NEW model (eg. "celebrate" after a
+	mutation, "evolve" after a stage change), so a morph is felt, not just seen.
+]]
+function CreatureService.refresh(player: Player, reveal: any?)
+	local genome = PlayerDataService.activeCreature(player)
+	if not genome then
+		return nil
+	end
+	refreshGroundFilter()
 
 	local state = active[player.UserId]
-	local keepCF = state and state.model and state.model.PrimaryPart
-		and state.model.PrimaryPart.CFrame or nil
-
+	local keepCF = state and state.model and state.model.PrimaryPart and state.model.PrimaryPart.CFrame or nil
 	if state and state.model then
 		state.model:Destroy()
 	end
@@ -108,37 +214,58 @@ function CreatureService.refresh(player: Player, dramatic: boolean?)
 	model.Name = (genome.name or "Creature") .. "_" .. player.Name
 	model:SetAttribute("Owner", player.UserId)
 	model:SetAttribute("OwnerName", player.Name)
-	model.Parent = ensureContainer()
-
-	local groundOffset = model:GetAttribute("GroundOffset") or 2
-	if keepCF then
-		model:PivotTo(CFrame.new(keepCF.Position.X, groundOffset, keepCF.Position.Z)
-			* (keepCF - keepCF.Position))
-	else
-		local char = player.Character
-		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		local base = hrp and (hrp :: BasePart).Position or Vector3.new(0, 0, 0)
-		model:PivotTo(CFrame.new(base.X + 4, groundOffset, base.Z + 4))
+	local temperament = dominantTemperament(genome)
+	model:SetAttribute("Temperament", temperament)
+	if reveal == true then
+		reveal = "celebrate"
+	end
+	if type(reveal) == "string" then
+		model:SetAttribute("Reveal", reveal)
+		model:SetAttribute("RevealAt", workspace:GetServerTimeNow())
 	end
 
-	nameplate(model, genome, player.Name)
+	local groundOffset = model:GetAttribute("GroundOffset") or 0
+	local cf: CFrame
+	if keepCF then
+		local y = CreatureService.groundAt(keepCF.Position.X, keepCF.Position.Z, keepCF.Position.Y) + groundOffset
+		cf = CFrame.new(keepCF.Position.X, y, keepCF.Position.Z) * keepCF.Rotation
+	else
+		local char = player.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local base = hrp and hrp.Position or Vector3.new(0, 0, 0)
+		local p = base + (hrp and hrp.CFrame.LookVector * 5 or Vector3.new(0, 0, -5))
+		cf = CFrame.lookAt(Vector3.new(p.X, CreatureService.groundAt(p.X, p.Z, base.Y) + groundOffset, p.Z),
+			Vector3.new(base.X, CreatureService.groundAt(p.X, p.Z, base.Y) + groundOffset, base.Z))
+	end
+	model:PivotTo(cf)
+	model.Parent = ensureContainer()
+	CollectionService:AddTag(model, CreatureService.TAG)
 
+	nameplate(model, genome)
+	petPrompt(model, player)
+
+	local body = Anatomy.bodies[genome.bodyFamily] or Anatomy.bodies.Cute
 	active[player.UserId] = {
 		model = model,
 		genome = genome,
-		temperament = dominantTemperament(genome),
-		phase = math.random() * 10,
+		temperament = temperament,
+		follow = FOLLOW[temperament] or FOLLOW.curious,
 		groundOffset = groundOffset,
-		popUntil = dramatic and (os.clock() + 0.5) or 0,
-		mood = "follow",
-		moodUntil = 0,
+		length = math.max(1.5, (model:GetAttribute("Height") or 2) * 1.2) * (body.followScale or 1),
+		mood = nil :: string?,
+		moodUntil = os.clock() + 5,
+		lastActionAt = os.clock(),
+		lastMoveAt = os.clock(),
+		ownerStillSince = os.clock(),
+		lastOwnerPos = nil :: Vector3?,
 		-- stable per-creature lateral offset so two creatures never stack up
-		sideOffset = (player.UserId % 2 == 0) and 2.2 or -2.2,
+		sideOffset = (player.UserId % 2 == 0) and 1 or -1,
+		heading = cf.LookVector,
 	}
 	return model
 end
 
-function CreatureService.get(player: Player)
+function CreatureService.get(player: Player): Model?
 	local state = active[player.UserId]
 	return state and state.model or nil
 end
@@ -151,113 +278,139 @@ function CreatureService.despawn(player: Player)
 	active[player.UserId] = nil
 end
 
--- SPEC §18: temperament decides HOW it moves, not how strong it is.
-local FOLLOW = {
-	affectionate = { dist = 4.0,  speed = 15, bob = 1.25 },
-	curious      = { dist = 7.0,  speed = 12, bob = 1.0 },
-	greedy       = { dist = 5.5,  speed = 14, bob = 1.15 },
-	brave        = { dist = 6.5,  speed = 13, bob = 0.9 },
-	mischievous  = { dist = 6.0,  speed = 14, bob = 1.3 },
-	silly        = { dist = 6.0,  speed = 13, bob = 1.5 },
-	nervous      = { dist = 3.2,  speed = 13, bob = 0.8 },
-	lazy         = { dist = 9.0,  speed = 7,  bob = 0.5 },
-}
+function CreatureService.setMood(player: Player, mood: string?, seconds: number?)
+	local state = active[player.UserId]
+	if state then
+		state.mood = mood
+		state.moodUntil = os.clock() + (seconds or 8)
+		state.model:SetAttribute("Mood", mood)
+	end
+end
+
+-- ═══ STEP ════════════════════════════════════════════════════════════════════
+
+local function flat(v: Vector3): Vector3
+	return Vector3.new(v.X, 0, v.Z)
+end
+
+local groundTick = 0
 
 local function step(dt: number)
+	groundTick += dt
+	local now = os.clock()
 	for userId, state in pairs(active) do
 		local model = state.model
-		local torso = model and model.PrimaryPart
-		if not torso or not model.Parent then
+		local root = model and model.PrimaryPart
+		if not root or not model.Parent then
 			active[userId] = nil
 			continue
 		end
-
 		local player = Players:GetPlayerByUserId(userId)
 		local char = player and player.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
-
-		local profile = FOLLOW[state.temperament] or FOLLOW.curious
-		state.phase += dt * (2.0 * profile.bob)
-
-		local pos = torso.Position
+		local F = state.follow
+		local pos = root.Position
 		local target = pos
 
+		-- owner stillness drives lazy/sleep behaviour
 		if hrp then
-			-- The whole game is watching your creature change, so it must stay ON
-			-- SCREEN. Roblox's default camera sits behind the character, so we anchor
-			-- the creature IN FRONT of the owner rather than merely "within N studs"
-			-- (which let it trail behind the player, permanently out of view).
-			local look = hrp.CFrame.LookVector
-			local right = hrp.CFrame.RightVector
-			local flatLook = Vector3.new(look.X, 0, look.Z)
-			if flatLook.Magnitude < 0.01 then
-				flatLook = Vector3.new(0, 0, -1)
+			if state.lastOwnerPos and (hrp.Position - state.lastOwnerPos).Magnitude > 0.6 then
+				state.ownerStillSince = now
 			end
-			flatLook = flatLook.Unit
+			state.lastOwnerPos = hrp.Position
+		end
+		local ownerIdle = now - state.ownerStillSince
 
-			-- Follow distance scales with body size. A fixed 7 studs puts a Baby
-			-- (torso ~1.4 deep) on the horizon as an unreadable dot, while a Mythic
-			-- at 7 studs fills the whole screen.
-			local reach = math.clamp(2.2 + torso.Size.Z * 1.2, 3.5, 13)
-				* (profile.dist / 7.0)
+		-- ── choose a mood ───────────────────────────────────────────────────
+		local mood: string? = state.mood
+		if now > state.moodUntil then
+			mood = nil
+			if state.temperament == "lazy" and ownerIdle > 6 then
+				mood = math.random() < 0.5 and "sleep" or "sit"
+			elseif ownerIdle > 25 then
+				mood = (state.temperament == "nervous") and "hide" or "sleep"
+			elseif state.temperament == "nervous" and math.random() < 0.15 then
+				mood = "hide"
+			end
+			state.mood = mood
+			state.moodUntil = now + math.random(5, 10)
+		end
+		if ownerIdle < 0.5 and state.mood == "sleep" then
+			-- owner moved: wake up (the client plays a little hop as it wakes)
+			state.mood = nil
+			mood = nil
+			CreatureService.action(model, "hop")
+		end
+		if model:GetAttribute("Mood") ~= mood then
+			model:SetAttribute("Mood", mood)
+		end
 
+		-- ── follow ──────────────────────────────────────────────────────────
+		local lookDir = state.heading
+		if hrp and mood ~= "sleep" and mood ~= "sit" then
+			local look = flat(hrp.CFrame.LookVector)
+			if look.Magnitude < 0.01 then
+				look = Vector3.new(0, 0, -1)
+			end
+			look = look.Unit
+			local right = Vector3.new(-look.Z, 0, look.X)
+			-- The whole game is watching your creature change, so it stays ON SCREEN:
+			-- anchored in front of the owner, distance proportional to its own size.
+			local reach = math.clamp(2.5 + state.length * F.dist * 1.6, 4, 16)
 			local anchor
-			if state.temperament == "nervous" then
-				-- the exception: a nervous creature hides behind its owner
-				anchor = hrp.Position - flatLook * math.max(3.0, reach * 0.5)
+			if state.temperament == "nervous" and mood == "hide" then
+				anchor = hrp.Position - look * math.max(3, reach * 0.45)
 			else
-				anchor = hrp.Position
-					+ flatLook * reach
-					+ Vector3.new(right.X, 0, right.Z).Unit * state.sideOffset
+				anchor = hrp.Position + look * reach + right * state.sideOffset * math.min(3, state.length * 0.9)
 			end
-			anchor = Vector3.new(anchor.X, pos.Y, anchor.Z)
-
-			local toAnchor = anchor - pos
+			local toAnchor = flat(anchor - pos)
 			local gap = toAnchor.Magnitude
-			if gap > 1.2 then
-				target = pos + toAnchor.Unit * math.min(profile.speed * dt, gap)
-			elseif state.temperament == "mischievous" then
-				-- circles its anchor instead of standing perfectly still
-				local side = Vector3.new(-flatLook.Z, 0, flatLook.X)
-				target = pos + side * (profile.speed * 0.3 * dt)
+			if gap > 60 then
+				-- fell far behind (teleport, respawn): catch up instantly
+				target = Vector3.new(anchor.X, pos.Y, anchor.Z)
+			elseif gap > 1.0 then
+				local speed = F.speed * (gap > 14 and 1.8 or 1)
+				target = pos + toAnchor.Unit * math.min(speed * dt, gap)
+				state.lastMoveAt = now
+			end
+			-- face movement while moving, face the owner when settled
+			local moved = flat(target - pos)
+			if moved.Magnitude > 0.02 then
+				lookDir = moved.Unit
+			else
+				local toOwner = flat(hrp.Position - pos)
+				if toOwner.Magnitude > 0.5 then
+					lookDir = toOwner.Unit
+				end
 			end
 		end
-
-		-- lazy creatures sit down, dramatically, on their own schedule
-		if state.temperament == "lazy" and os.clock() > state.moodUntil then
-			state.mood = (state.mood == "sit") and "follow" or "sit"
-			state.moodUntil = os.clock() + math.random(4, 9)
+		state.heading = state.heading:Lerp(lookDir, math.clamp(dt * 7, 0, 1))
+		if state.heading.Magnitude < 0.01 then
+			state.heading = lookDir
 		end
 
-		local bobAmp = (state.mood == "sit") and 0.04 or 0.16
-		local bob = math.abs(math.sin(state.phase)) * bobAmp * torso.Size.Y
-		local sink = (state.mood == "sit") and torso.Size.Y * 0.12 or 0
-		local y = state.groundOffset + bob - sink
-
-		-- pop on mutation / evolution so the change is FELT (SPEC §5)
-		local extra = CFrame.identity
-		if os.clock() < state.popUntil then
-			local t = (state.popUntil - os.clock()) / 0.5
-			extra = CFrame.Angles(0, math.sin(t * 22) * 0.22, 0)
+		-- ── idle flourishes (temperament-flavoured) ─────────────────────────
+		if not mood and now - state.lastMoveAt > 1.5 and now - state.lastActionAt > F.idleEvery then
+			state.lastActionAt = now + math.random() * 3
+			CreatureService.action(model, F.idleAction)
 		end
 
-		local look = torso.CFrame.LookVector
-		if hrp then
-			-- it looks at its owner. SPEC §42 lists this first in the animation budget,
-			-- and since the creature now stands in front, this turns it to face camera.
-			local toOwner = hrp.Position - Vector3.new(target.X, hrp.Position.Y, target.Z)
-			if toOwner.Magnitude > 0.5 then
-				look = toOwner.Unit
-			end
+		-- ── ground + write ──────────────────────────────────────────────────
+		local groundY = state.groundY
+		if not groundY or groundTick > 0.2 or (target - pos).Magnitude > 0.01 then
+			groundY = CreatureService.groundAt(target.X, target.Z, pos.Y)
+			state.groundY = groundY
 		end
-		local flatLook = Vector3.new(look.X, 0, look.Z)
-		if flatLook.Magnitude < 0.01 then
-			flatLook = Vector3.new(0, 0, -1)
+		local y = groundY + state.groundOffset
+		local p = Vector3.new(target.X, y, target.Z)
+		local h = flat(state.heading)
+		if h.Magnitude < 0.01 then
+			h = Vector3.new(0, 0, -1)
 		end
-
-		local goal = CFrame.lookAt(Vector3.new(target.X, y, target.Z),
-			Vector3.new(target.X, y, target.Z) + flatLook.Unit) * extra
-		torso.CFrame = torso.CFrame:Lerp(goal, math.clamp(dt * 8, 0, 1))
+		root.CFrame = CFrame.lookAt(p, p + h.Unit)
+	end
+	if groundTick > 0.2 then
+		groundTick = 0
 	end
 end
 
@@ -271,7 +424,6 @@ function CreatureService.start()
 
 	PlayerDataService.onLoaded(function(player, profile)
 		if profile.activeCreature > 0 and profile.creatures[profile.activeCreature] then
-			-- wait for a character so it spawns beside them, not at the origin
 			task.spawn(function()
 				for _ = 1, 100 do
 					if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
@@ -279,7 +431,7 @@ function CreatureService.start()
 					end
 					task.wait(0.1)
 				end
-				CreatureService.refresh(player, false)
+				CreatureService.refresh(player, nil)
 			end)
 		end
 	end)

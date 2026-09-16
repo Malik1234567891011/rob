@@ -170,10 +170,19 @@ function FtueService.pickEgg(player: Player, index: number)
 	table.insert(profile.creatures, genome)
 	profile.activeCreature = #profile.creatures
 
-	local model = CreatureService.refresh(player, true)
+	local model = CreatureService.refresh(player, "hop")
 	if model and chosenCF then
-		local groundOffset = model:GetAttribute("GroundOffset") or 1
-		model:PivotTo(CFrame.new(chosenCF.Position.X, groundOffset, chosenCF.Position.Z))
+		local groundOffset = model:GetAttribute("GroundOffset") or 0
+		local gy = CreatureService.groundAt(chosenCF.Position.X, chosenCF.Position.Z, chosenCF.Position.Y)
+		local char = player.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local p = Vector3.new(chosenCF.Position.X, gy + groundOffset, chosenCF.Position.Z)
+		-- it tumbles out and looks up at the player (SPEC §8, 0:06)
+		local face = hrp and Vector3.new(hrp.Position.X, p.Y, hrp.Position.Z) or (p + Vector3.new(0, 0, 1))
+		model:PivotTo(CFrame.lookAt(p, face))
+		task.delay(0.9, function()
+			CreatureService.action(model, "hungry")
+		end)
 	end
 
 	step(player, 1, { text = "HUNGRY!", creature = true })

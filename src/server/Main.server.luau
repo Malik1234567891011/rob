@@ -147,6 +147,18 @@ CreatureService.start()
 FtueService.start()
 OfflineService.start()
 
+require(Services:WaitForChild("DevHooks")).start({
+	PlayerDataService = PlayerDataService,
+	AnalyticsService = AnalyticsService,
+	DiscoveryService = DiscoveryService,
+	CreatureService = CreatureService,
+	FeedingService = FeedingService,
+	WorldService = WorldService,
+	FtueService = FtueService,
+	OfflineService = OfflineService,
+	LineageService = LineageService,
+})
+
 print(string.format(
 	"[Main] Feed a Monster! ready — %d ingredients, %d traits, %d mutations (%d secret), %s silhouettes",
 	Ingredients.count(), #Traits.order, #Mutations.order, Mutations.secretCount(),

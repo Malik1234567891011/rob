@@ -272,17 +272,19 @@ local function spawnAspirationCreature(parent: Folder)
 
 	local model = CreatureBuilder.build(genome, 1)
 	model.Name = "AspirationCreature"
-	local groundOffset = model:GetAttribute("GroundOffset") or 6
+	local groundOffset = model:GetAttribute("GroundOffset") or 0
 	model:PivotTo(CFrame.new(64, groundOffset, -70))
 	model.Parent = parent
+	game:GetService("CollectionService"):AddTag(model, "FAMCreature") -- clients animate it
 
 	-- slow patrol across the horizon of the starting plot
 	task.spawn(function()
+		local CreatureService = require(script.Parent.CreatureService)
 		local t = 0
 		while model.Parent do
 			t += 0.03
-			local torso = model.PrimaryPart
-			if not torso then
+			local root = model.PrimaryPart
+			if not root then
 				break
 			end
 			local x = 64 + math.sin(t * 0.18) * 46
@@ -291,10 +293,8 @@ local function spawnAspirationCreature(parent: Folder)
 			local nextZ = -74 + math.cos((t + 0.05) * 0.18) * 14
 			-- Both points MUST share a Y. Feeding lookAt a target at a different
 			-- height pitches the whole creature over onto its face.
-			local bobY = groundOffset + math.abs(math.sin(t * 2)) * 0.5
-			torso.CFrame = CFrame.lookAt(
-				Vector3.new(x, bobY, z),
-				Vector3.new(nextX, bobY, nextZ))
+			local y = CreatureService.groundAt(x, z, 20) + groundOffset
+			root.CFrame = CFrame.lookAt(Vector3.new(x, y, z), Vector3.new(nextX, y, nextZ))
 			task.wait(0.03)
 		end
 	end)

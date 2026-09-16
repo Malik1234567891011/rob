@@ -16,6 +16,7 @@ Net.EVENTS = {
 	"Evolution",       -- stage-up cinematic cue
 	"FtueStep",        -- drives the scripted first 60 seconds
 	"Reaction",        -- eat reaction: animation + sfx + colour
+	"CreatureAction",  -- (creatureId, action) one-shot animation, broadcast to everyone
 	"WorldNotice",     -- gate opened, world event
 	"OfflineReport",   -- "WHILE YOU WERE GONE..."
 }

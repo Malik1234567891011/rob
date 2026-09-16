@@ -217,12 +217,17 @@ function SanctuaryService.buyDecor(player: Player, decorId: string)
 	if not profile or not def or not index then
 		return { ok = false, reason = "can't place that" }
 	end
+	local okM, Monetization = pcall(require, script.Parent.MonetizationService)
+	local plus = okM and Monetization.hasPass(player, "SanctuaryPlus") or false
+	if def.plus and not plus then
+		return { ok = false, reason = "part of Sanctuary Builder+" }
+	end
 	local used = {}
 	for _, d in ipairs(profile.sanctuary.decor) do
 		used[d.slot] = true
 	end
 	local slot
-	for i = 1, Sanctuary.slotsFor(profile.sanctuary.tier) do
+	for _, i in ipairs(Sanctuary.slotsFor(profile.sanctuary.tier, plus)) do
 		if not used[i] then
 			slot = i
 			break

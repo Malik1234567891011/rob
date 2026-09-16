@@ -57,6 +57,15 @@ Sanctuary.decorSlots = {
 	{ -28, 0, 14 }, { 28, 0, 12 }, { 6, 0, 8 }, { -2, 0, -4 },
 	{ 10, 0, 28 }, { -12, 0, 28 }, { 20, 0, 6 }, { -20, 0, 0 },
 }
+-- Sanctuary Builder+ pass: six more spots on top of the tier's (slots 13-18)
+Sanctuary.plusSlots = {
+	{ 8, 0, -24 }, { -14, 0, 2 }, { 6, 0, 16 }, { -26, 0, -2 }, { 26, 0, -26 }, { 12, 0, -2 },
+}
+Sanctuary.PLUS_EXTRA = 6
+for _, s in ipairs(Sanctuary.plusSlots) do
+	table.insert(Sanctuary.decorSlots, s)
+end
+
 -- slots unlocked per tier (tier 1 -> 2 slots ... tier 12 -> all 12)
 Sanctuary.slotsAtTier = { 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 12 }
 
@@ -76,15 +85,33 @@ Sanctuary.decor = {
 	Tent_Striped       = { display = "Striped Tent", emoji = "⛺", price = 2400 },
 	Crystal_Cluster_Purple = { display = "Crystal Cluster", emoji = "💜", price = 3500, essence = 1 },
 	Tree_Fruit         = { display = "Apple Tree", emoji = "🍎", price = 5000, essence = 2 },
+	-- the fancy architecture set (Sanctuary Builder+ pass)
+	Lamp_Post          = { display = "Town Lamp", emoji = "🏮", price = 600, plus = true },
+	Bench_Park         = { display = "Park Bench", emoji = "🛋️", price = 650, plus = true },
+	GlowMushroom_A     = { display = "Glowcap Lamp", emoji = "🍄", price = 900, plus = true },
+	Statue_Pedestal    = { display = "Pedestal", emoji = "🏛️", price = 1500, plus = true },
+	Crystal_Cluster_Cyan = { display = "Ice Crystals", emoji = "💎", price = 2800, essence = 1, plus = true },
+	Fountain           = { display = "Grand Fountain", emoji = "⛲", price = 6000, essence = 3, plus = true },
 }
 Sanctuary.decorOrder = {
 	"FlowerPatch_Yellow", "FlowerPatch_Pink", "FlowerPatch_Blue", "Bush_A", "Mushroom_Red",
 	"Hay_Bale", "Bench_Wood", "Mailbox", "Birdhouse_Post", "Planter_Box", "Balloon_Cluster",
 	"Well", "Tent_Striped", "Crystal_Cluster_Purple", "Tree_Fruit",
+	"Lamp_Post", "Bench_Park", "GlowMushroom_A", "Statue_Pedestal", "Crystal_Cluster_Cyan", "Fountain",
 }
 
-function Sanctuary.slotsFor(tier: number): number
-	return Sanctuary.slotsAtTier[math.clamp(tier, 1, #Sanctuary.slotsAtTier)]
+-- Tier slots come first (1..12); the Builder+ spots are always 13..18.
+function Sanctuary.slotsFor(tier: number, plus: boolean?): { number }
+	local out = {}
+	for i = 1, Sanctuary.slotsAtTier[math.clamp(tier, 1, #Sanctuary.slotsAtTier)] do
+		table.insert(out, i)
+	end
+	if plus then
+		for i = 13, 12 + Sanctuary.PLUS_EXTRA do
+			table.insert(out, i)
+		end
+	end
+	return out
 end
 
 return Sanctuary

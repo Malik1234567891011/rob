@@ -69,6 +69,13 @@
     "sha": "8f8978ce1781e75e",
     "type": "Model"
   },
+  "art/build/kit_events.fbx": {
+    "assetId": "95606166009836",
+    "at": 1789587255,
+    "name": "FAM kit_events",
+    "sha": "d5aee0dbb3c53eb9",
+    "type": "Model"
+  },
   "art/build/kit_hub.fbx": {
     "assetId": "101603507386817",
     "at": 1789583996,
@@ -119,10 +126,10 @@
     "type": "Model"
   },
   "art/build/sync.rbxmx": {
-    "assetId": "102519202463145",
-    "at": 1789586048,
+    "assetId": "121303679601628",
+    "at": 1789587288,
     "name": "FAM code sync",
-    "sha": "2468d0e3db399c06",
+    "sha": "ece1fc365d4d38fb",
     "type": "Model"
   },
   "art/build/weird_body_Blocky.fbx": {

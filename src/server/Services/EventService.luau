@@ -26,6 +26,7 @@ local Economy = require(Shared.Config:WaitForChild("Economy"))
 local Trials = require(Shared.Config:WaitForChild("Trials"))
 local CreatureBuilder = require(Shared:WaitForChild("CreatureBuilder"))
 local PropBuilder = require(Shared:WaitForChild("PropBuilder"))
+local Kit = require(Shared:WaitForChild("Kit"))
 
 local PlayerDataService = require(script.Parent.PlayerDataService)
 local CreatureService = require(script.Parent.CreatureService)
@@ -173,17 +174,25 @@ end
 
 handlers.GiantPicnic = function(duration)
 	local at = groundAt(randomSpot("EventSpot_Meadow", Vector3.new(380, 0, 0)))
-	local blanket = Instance.new("Part")
-	blanket.Name = "PicnicBlanket"
-	blanket.Anchored = true
-	blanket.Size = Vector3.new(26, 0.2, 18)
-	blanket.CFrame = CFrame.new(at + Vector3.new(0, 0.1, 0))
-	blanket.Color = Color3.fromRGB(226, 76, 76)
-	blanket.Material = Enum.Material.Fabric
-	blanket.Parent = runtime
+	local top = 0.3
+	if Kit.has("Picnic_Blanket") then
+		local yaw = CFrame.Angles(0, math.random() * 6.28, 0)
+		Kit.place("Picnic_Blanket", CFrame.new(at) * yaw, runtime, { collide = false })
+		Kit.place("Picnic_Basket", CFrame.new(at) * yaw * CFrame.new(-8, top, -3) * CFrame.Angles(0, 0.4, 0), runtime)
+	else
+		local blanket = Instance.new("Part")
+		blanket.Name = "PicnicBlanket"
+		blanket.Anchored = true
+		blanket.Size = Vector3.new(26, 0.2, 18)
+		blanket.CFrame = CFrame.new(at + Vector3.new(0, 0.1, 0))
+		blanket.Color = Color3.fromRGB(226, 76, 76)
+		blanket.Material = Enum.Material.Fabric
+		blanket.Parent = runtime
+		top = 0.2
+	end
 	local treats = { "Watermelon", "Cupcake", "Cookie", "Cheese", "Strawberry", "CloudBerry", "Honeycomb", "Pumpkin", "Clover" }
 	for i = 1, 16 do
-		EventService.spawnPickup(treats[(i % #treats) + 1], at + Vector3.new(math.random(-11, 11), 0, math.random(-7, 7)), duration + 20)
+		EventService.spawnPickup(treats[(i % #treats) + 1], at + Vector3.new(math.random(-9, 9), top, math.random(-5, 5)), duration + 20)
 	end
 	task.wait(duration)
 end
@@ -221,41 +230,47 @@ end
 
 handlers.UFO = function(duration)
 	local center = groundAt(randomSpot("EventSpot_Hub", Vector3.new(0, 0, 0)))
-	local saucer = Instance.new("Part")
-	saucer.Name = "UFO"
-	saucer.Shape = Enum.PartType.Cylinder
-	saucer.Size = Vector3.new(3, 26, 26)
-	saucer.Material = Enum.Material.Metal
-	saucer.Color = Color3.fromRGB(170, 180, 195)
-	saucer.Anchored = true
-	saucer.CanCollide = false
-	saucer.CFrame = CFrame.new(center + Vector3.new(0, 70, 0)) * CFrame.Angles(0, 0, math.rad(90))
-	saucer.Parent = runtime
-	local dome = Instance.new("Part")
-	dome.Shape = Enum.PartType.Ball
-	dome.Size = Vector3.new(11, 11, 11)
-	dome.Material = Enum.Material.Glass
-	dome.Transparency = 0.3
-	dome.Color = Color3.fromRGB(150, 255, 150)
-	dome.Anchored = true
-	dome.CanCollide = false
-	dome.CFrame = CFrame.new(center + Vector3.new(0, 73, 0))
-	dome.Parent = runtime
-	local light = Instance.new("SpotLight")
-	light.Face = Enum.NormalId.Left
-	light.Range = 80
-	light.Angle = 40
-	light.Brightness = 4
-	light.Color = Color3.fromRGB(170, 255, 140)
-	light.Parent = saucer
+	local HOVER = 60
+	local saucer: Model
+	local beam: Model?
+	if Kit.has("UFO_Saucer") then
+		saucer = Kit.place("UFO_Saucer", CFrame.new(center + Vector3.new(0, HOVER, 0)), runtime, { collide = false, castShadow = true }) :: Model
+		beam = Kit.place("UFO_Beam", CFrame.new(center + Vector3.new(0, HOVER, 0)) * CFrame.Angles(math.pi, 0, 0), runtime, { collide = false, query = false, castShadow = false })
+		if beam and beam.PrimaryPart then
+			beam.PrimaryPart.Transparency = 0.55
+		end
+		local light = Instance.new("SpotLight")
+		light.Face = Enum.NormalId.Bottom
+		light.Range = 80
+		light.Angle = 40
+		light.Brightness = 4
+		light.Color = Color3.fromRGB(170, 255, 140)
+		light.Parent = saucer.PrimaryPart
+	else
+		saucer = Instance.new("Model")
+		saucer.Name = "UFO"
+		local disc = Instance.new("Part")
+		disc.Shape = Enum.PartType.Cylinder
+		disc.Size = Vector3.new(3, 26, 26)
+		disc.Material = Enum.Material.Metal
+		disc.Color = Color3.fromRGB(170, 180, 195)
+		disc.Anchored = true
+		disc.CanCollide = false
+		disc.CFrame = CFrame.new(center + Vector3.new(0, HOVER, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		disc.Parent = saucer
+		saucer.PrimaryPart = disc
+		saucer.Parent = runtime
+	end
 	local stop = os.clock() + duration
 	local t = 0
 	while os.clock() < stop and active == "UFO" do
 		t += 1
-		-- drift over the hub
-		local p = center + Vector3.new(math.sin(t * 0.3) * 30, 70, math.cos(t * 0.23) * 30)
-		saucer.CFrame = CFrame.new(p) * CFrame.Angles(0, t * 0.5, math.rad(90))
-		dome.CFrame = CFrame.new(p + Vector3.new(0, 3, 0))
+		-- drift over the hub, slowly spinning, the beam sweeping the square
+		local p = center + Vector3.new(math.sin(t * 0.3) * 30, HOVER, math.cos(t * 0.23) * 30)
+		saucer:PivotTo(CFrame.new(p) * CFrame.Angles(0, t * 0.5, 0))
+		if beam then
+			beam:PivotTo(CFrame.new(p) * CFrame.Angles(math.pi, 0, 0))
+		end
 		if t % 6 == 0 then
 			local list = Players:GetPlayers()
 			local victim = list[math.random(1, #list)]
@@ -343,7 +358,17 @@ handlers.Earthquake = function(duration)
 	Net.event("WorldNotice"):FireAllClients({ kind = "shake", strength = 1 })
 	local world = workspace:FindFirstChild("World")
 	local seal = world and world:FindFirstChild("QuakeSeal", true) :: BasePart?
+	-- the seal may be a plain wall or a collider dressed with a rockfall mesh: hide all of it
+	local saved = {}
 	if seal then
+		for _, p in ipairs(seal:GetDescendants()) do
+			if p:IsA("BasePart") then
+				saved[p] = { p.Transparency, p.CanCollide }
+				p.Transparency = 1
+				p.CanCollide = false
+			end
+		end
+		saved[seal] = { seal.Transparency, seal.CanCollide }
 		seal.Transparency = 1
 		seal.CanCollide = false
 	end
@@ -352,9 +377,10 @@ handlers.Earthquake = function(duration)
 			jitter(randomSpot("EventSpot_Quake", randomSpot("EventSpot_Caves", Vector3.new(0, 0, -420))), 14), duration + 10)
 	end
 	task.wait(duration)
-	if seal then
-		seal.Transparency = 0
-		seal.CanCollide = true
+	for p, st in pairs(saved) do
+		if p.Parent then
+			p.Transparency, p.CanCollide = st[1], st[2]
+		end
 	end
 end
 
@@ -366,10 +392,12 @@ handlers.Meteor = function(duration)
 	local impact = groundAt(randomSpot("EventSpot_Meteor", randomSpot("EventSpot_Meadow", Vector3.new(380, 0, 0))))
 	Net.event("WorldNotice"):FireAllClients({ kind = "meteor_incoming", at = impact })
 	task.wait(4)
-	local rock = PropBuilder.build("Meteorite")
+	local rock = Kit.clone("Meteor_Big") or PropBuilder.build("Meteorite")
 	local core: BasePart
 	if rock then
-		rock:ScaleTo(6)
+		if not Kit.has("Meteor_Big") then
+			rock:ScaleTo(6)
+		end
 		core = rock.PrimaryPart :: BasePart
 	else
 		rock = Instance.new("Model")
@@ -384,7 +412,7 @@ handlers.Meteor = function(duration)
 		core = p
 	end
 	rock.Name = "Meteor"
-	local rest = CFrame.new(impact + Vector3.new(0, 4, 0))
+	local rest = CFrame.new(impact + Vector3.new(0, Kit.has("Meteor_Big") and -0.8 or 4, 0))
 	rock:PivotTo(rest + Vector3.new(80, 260, 40))
 	rock.Parent = runtime
 	local glow = Instance.new("PointLight")

@@ -24,6 +24,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Kit = require(Shared:WaitForChild("Kit"))
 local Biomes = require(Shared.Config:WaitForChild("Biomes"))
 local Sanctuary = require(Shared.Config:WaitForChild("Sanctuary"))
+local WorldTerrain = require(script.Parent:WaitForChild("WorldTerrain"))
 
 local WorldBuilder = {}
 
@@ -75,7 +76,7 @@ params.FilterType = Enum.RaycastFilterType.Include
 
 -- Rays start at `rayFrom`. Inside the cave it is set BELOW the cavern ceiling, otherwise
 -- every crystal lands on top of the mountain instead of on the cavern floor.
-local rayFrom = 200
+local rayFrom = 320
 
 -- height of TERRAIN only at (x, z)
 local function ground(x: number, z: number, fromY: number?): number
@@ -135,19 +136,15 @@ local function free(x: number, z: number, r: number): boolean
 end
 
 local function onRoad(x: number, z: number): boolean
-	-- straight roads along axes (width 16) and the ring road (r 132..148)
-	local d = math.sqrt(x * x + z * z)
-	if d > 50 and ((math.abs(z) < 9 and math.abs(x) < 340) or (math.abs(x) < 9 and z < 0 and z > -330) or (math.abs(x) < 9 and z > 0 and z < 340)) then
-		return true
-	end
-	if d > 128 and d < 152 then
-		return true
-	end
-	return false
+	return WorldTerrain.isPaved(x, z, 3)
 end
 
 -- scatter kit meshes in a disc or box, on grass, away from reserved spots
+-- why scatter attempts fail, so an empty area can be diagnosed instead of guessed at
+WorldBuilder.rejects = { taken = 0, paved = 0, noHit = 0, steep = 0, water = 0, material = 0, noAsset = 0, placed = 0 }
+
 local function scatter(names: { string }, count: number, cx: number, cz: number, radius: number, parent: Instance, minGap: number, scaleRange: { number }?, materials: { Enum.Material }?)
+	local R = WorldBuilder.rejects
 	local placed = 0
 	local tries = 0
 	while placed < count and tries < count * 12 do
@@ -155,21 +152,67 @@ local function scatter(names: { string }, count: number, cx: number, cz: number,
 		local a = rng:NextNumber(0, math.pi * 2)
 		local r = math.sqrt(rng:NextNumber()) * radius
 		local x, z = cx + math.cos(a) * r, cz + math.sin(a) * r
-		if free(x, z, minGap) and not onRoad(x, z) then
+		if not free(x, z, minGap) then
+			R.taken += 1
+		elseif WorldTerrain.isPaved(x, z, math.max(2, minGap * 0.5)) then
+			R.paved += 1
+		else
 			local hit = groundHit(x, z)
-			if hit and hit.Normal.Y > 0.82 and (not materials or table.find(materials, hit.Material)) then
+			if not hit then
+				R.noHit += 1
+			elseif hit.Normal.Y <= 0.82 then
+				R.steep += 1
+			elseif hit.Material == M.Water then
+				R.water += 1
+			elseif materials and not table.find(materials, hit.Material) then
+				R.material += 1
+			else
 				local s = scaleRange and rng:NextNumber(scaleRange[1], scaleRange[2]) or 1
 				local m = place(names[rng:NextInteger(1, #names)], x, z, nil, parent, s, hit.Position.Y - 0.15)
 				if m then
 					placed += 1
+					R.placed += 1
 					if minGap > 2 then
 						reserve(x, z, minGap * 0.6)
 					end
+				else
+					R.noAsset += 1
 				end
 			end
 		end
 	end
 	return placed
+end
+
+-- groves and clearings instead of an even polka-dot: pick cluster centres, fill around them
+local function grove(names: { string }, clusters: number, perCluster: number, cx: number, cz: number, radius: number, spread: number, parent: Instance, minGap: number, scaleRange: { number }?, materials: { Enum.Material }?)
+	local placed = 0
+	for _ = 1, clusters do
+		local a = rng:NextNumber(0, math.pi * 2)
+		local r = math.sqrt(rng:NextNumber()) * radius
+		local gx, gz = cx + math.cos(a) * r, cz + math.sin(a) * r
+		if not WorldTerrain.isPaved(gx, gz, spread * 0.4) then
+			placed += scatter(names, rng:NextInteger(math.max(1, perCluster - 2), perCluster + 2), gx, gz, spread, parent, minGap, scaleRange, materials)
+		end
+	end
+	return placed
+end
+
+-- walk a polyline, calling fn(x, z, dirX, dirZ) every `step` studs
+local function alongRoad(pts: { { number } }, step: number, startAt: number, fn: (number, number, number, number, number) -> ())
+	local travelled, nextAt, n = 0, startAt, 0
+	for i = 1, #pts - 1 do
+		local ax, az, bx, bz = pts[i][1], pts[i][2], pts[i + 1][1], pts[i + 1][2]
+		local len = math.sqrt((bx - ax) ^ 2 + (bz - az) ^ 2)
+		local dx, dz = (bx - ax) / len, (bz - az) / len
+		while nextAt <= travelled + len do
+			local t = nextAt - travelled
+			n += 1
+			fn(ax + dx * t, az + dz * t, dx, dz, n)
+			nextAt += step
+		end
+		travelled += len
+	end
 end
 
 local function spawnArea(biome: string, cf: CFrame, size: Vector3)
@@ -204,7 +247,7 @@ function WorldBuilder.clear()
 	end
 	T:Clear()
 	keepOut = {}
-	rayFrom = 200
+	rayFrom = 320
 	rng = Random.new(20260916)
 	for _, n in ipairs({ "Baseplate", "PreviewStage", "LookTest" }) do
 		local x = workspace:FindFirstChild(n)
@@ -216,14 +259,25 @@ function WorldBuilder.clear()
 	return "cleared"
 end
 
--- ═══ TERRAIN + LIGHTING ══════════════════════════════════════════════════════
-
-local function fillBlock(x0: number, z0: number, x1: number, z1: number, yTop: number, depth: number, mat: Enum.Material)
-	local cx, cz = (x0 + x1) / 2, (z0 + z1) / 2
-	T:FillBlock(CFrame.new(cx, yTop - depth / 2, cz), Vector3.new(math.abs(x1 - x0), depth, math.abs(z1 - z0)), mat)
+-- props only: keeps the (slow to write) terrain, rebuilds everything placed on it
+function WorldBuilder.clearProps()
+	local w = workspace:FindFirstChild("World")
+	if w then
+		w:Destroy()
+	end
+	keepOut = {}
+	rayFrom = 320
+	rng = Random.new(20260916)
+	for k in pairs(WorldBuilder.rejects) do
+		WorldBuilder.rejects[k] = 0
+	end
+	getWorld()
+	return "props cleared"
 end
 
-function WorldBuilder.terrain()
+-- ═══ TERRAIN + LIGHTING ══════════════════════════════════════════════════════
+
+function WorldBuilder.terrain(bandFrom: number?, bandTo: number?)
 	getWorld()
 	-- saturated but natural (SPEC §40)
 	T:SetMaterialColor(M.Grass, Color3.fromRGB(104, 176, 72))
@@ -246,38 +300,14 @@ function WorldBuilder.terrain()
 		(T :: any).Decoration = true -- grass decoration; not scriptable in every context
 	end)
 
-	-- the sea around everything
-	fillBlock(-1100, -1150, 1100, 1100, -1.5, 30, M.Water)
-	fillBlock(-1100, -1150, 1100, 1100, -31.5, 6, M.Sand)
-	-- the island
-	fillBlock(-660, -700, 660, 330, 0, 12, M.Grass)
-	-- beach
-	fillBlock(-420, 330, 420, 430, 0, 12, M.Sand)
-	fillBlock(-420, 430, 420, 470, -1, 12, M.Sand)
-	-- rounded coast: soften the corners with grass balls under the edge
-	for i = 0, 40 do
-		local x = -660 + i * 33
-		T:FillBall(Vector3.new(x, -8, -700), 20, M.Grass)
-		T:FillBall(Vector3.new(x, -8, 330), 20, M.Grass)
+	-- the island is one height function (WorldTerrain), written in bands so no single call
+	-- runs too long. `terrain(from, to)` writes a subset; `terrain()` writes all of it.
+	if not bandFrom or bandFrom == 0 then
+		WorldTerrain.sea()
 	end
-	for i = 0, 31 do
-		local z = -700 + i * 33
-		T:FillBall(Vector3.new(-660, -8, z), 20, M.Grass)
-		T:FillBall(Vector3.new(660, -8, z), 20, M.Grass)
-	end
-
-	-- town square: cobblestone disc
-	T:FillCylinder(CFrame.new(0, -1, 0), 2, 62, M.Cobblestone)
-	-- straight roads to each biome
-	fillBlock(56, -8, 340, 8, 0, 1.6, M.Ground)
-	fillBlock(-340, -8, -56, 8, 0, 1.6, M.Ground)
-	fillBlock(-8, -330, 8, -56, 0, 1.6, M.Ground)
-	fillBlock(-8, 56, 8, 340, 0, 1.6, M.Ground)
-	-- the ring road between the square and the plots (aspiration creature walks it)
-	for i = 0, 120 do
-		local a = i / 120 * math.pi * 2
-		local x, z = math.cos(a) * 140, math.sin(a) * 140
-		T:FillBlock(CFrame.new(x, -0.8, z) * CFrame.Angles(0, -a, 0), Vector3.new(14, 1.6, 9), M.Ground)
+	local nb = WorldTerrain.bands()
+	for band = bandFrom or 0, math.min(bandTo or (nb - 1), nb - 1) do
+		WorldTerrain.writeBand(band)
 	end
 	reserve(0, 0, 66)
 
@@ -331,11 +361,11 @@ function WorldBuilder.hub()
 	-- parade runway runs north from the square
 	place("Parade_Runway", 0, -60, 0, hub)
 	place("Parade_Arch", 0, -38, 0, hub)
-	marker("ParadeStart", CFrame.new(0, 1.8, -42), hm)
-	marker("ParadeEnd", CFrame.new(0, 1.8, -77), hm)
+	marker("ParadeStart", CFrame.new(0, ground(0, -42) + 1.8, -42), hm)
+	marker("ParadeEnd", CFrame.new(0, ground(0, -77) + 1.8, -77), hm)
 	reserve(0, -60, 26)
 	for i = 0, 3 do
-		place("Bench_Park", i % 2 == 0 and -12 or 12, -48 - i * 9, i % 2 == 0 and 90 or 270, hub)
+		place("Bench_Park", i % 2 == 0 and -12 or 12, -48 - i * 9, i % 2 == 0 and 270 or 90, hub)
 	end
 
 	local function facing(name: string, x: number, z: number, parent: Instance, scale: number?)
@@ -366,8 +396,8 @@ function WorldBuilder.hub()
 	for _, spot in ipairs({ { 40, -20 }, { -40, -20 }, { 42, 26 }, { -44, 28 } }) do
 		reserve(spot[1], spot[2], 12)
 	end
-	marker("Travel_Hub", CFrame.new(0, 2, 34), markers)
-	marker("TrialReturn", CFrame.new(-36, 2, 22), markers)
+	marker("Travel_Hub", CFrame.new(0, ground(0, 34) + 1, 34), markers)
+	marker("TrialReturn", CFrame.new(-36, ground(-36, 22) + 2, 22), markers)
 
 	-- lamp ring, bunting between lamps, benches, planters, balloons
 	local lamps = {}
@@ -376,11 +406,13 @@ function WorldBuilder.hub()
 		local x, z = math.cos(a) * 56, math.sin(a) * 56
 		place("Lamp_Post", x, z, -math.deg(a), hub)
 		table.insert(lamps, Vector3.new(x, 0, z))
+		reserve(x, z, 3)
 	end
 	for i = 1, #lamps do
 		local a, b = lamps[i], lamps[(i % #lamps) + 1]
 		local mid = (a + b) / 2
-		Kit.place("Bunting_Span", CFrame.lookAt(Vector3.new(mid.X, 0, mid.Z), Vector3.new(b.X, 0, b.Z)) * CFrame.Angles(0, math.rad(90), 0), hub, { collide = false })
+		local gy = ground(mid.X, mid.Z) + 6.4
+		Kit.place("Bunting_Span", CFrame.lookAt(Vector3.new(mid.X, gy, mid.Z), Vector3.new(b.X, gy, b.Z)) * CFrame.Angles(0, math.rad(90), 0), hub, { collide = false })
 	end
 	for i = 0, 5 do
 		local a = i / 6 * math.pi * 2 + 0.3
@@ -395,10 +427,36 @@ function WorldBuilder.hub()
 		place("Statue_Pedestal", i * 9, 22, 180, hub)
 	end
 	for i = 1, 4 do
-		marker("EventSpot_Hub_" .. i, CFrame.new(math.cos(i * 1.57) * 34, 1, math.sin(i * 1.57) * 34), markers)
+		local ex, ez = math.cos(i * 1.57) * 34, math.sin(i * 1.57) * 34
+		marker("EventSpot_Hub_" .. i, CFrame.new(ex, ground(ex, ez) + 1, ez), markers)
 	end
-	-- flowers around the edge of the square
-	scatter({ "FlowerPatch_Yellow", "FlowerPatch_Pink", "FlowerPatch_Blue", "FlowerPatch_White", "GrassTuft_A", "GrassTuft_B", "Bush_A" }, 60, 0, 0, 90, hub, 2.5)
+	-- the park between the square and the ring road: four quarter-gardens between the roads,
+	-- each a little grove with flower beds, so the walk to your plot is never bare lawn
+	for q = 0, 3 do
+		local a = math.rad(45 + q * 90)
+		local gx, gz = math.cos(a) * 100, math.sin(a) * 100
+		scatter({ "Tree_Puffy_A", "Tree_Puffy_B", "Tree_Fruit" }, 5, gx, gz, 26, hub, 9, { 0.9, 1.15 })
+		scatter({ "Bush_A", "Bush_B", "Bush_C" }, 8, gx, gz, 34, hub, 4, { 0.8, 1.2 })
+		for k = 0, 2 do
+			local fa = a + (k - 1) * 0.28
+			scatter({ "FlowerPatch_Yellow", "FlowerPatch_Pink", "FlowerPatch_Blue", "FlowerPatch_White" }, 7, math.cos(fa) * 76, math.sin(fa) * 76, 7, hub, 1.2, { 1.0, 1.4 })
+		end
+		place("Bench_Wood", math.cos(a) * 72, math.sin(a) * 72, -math.deg(a) + 90, hub)
+	end
+	scatter({ "GrassTuft_A", "GrassTuft_B" }, 70, 0, 0, 130, hub, 1.5)
+	-- lamps and signposts along the four main roads, out to each biome
+	for _, road in ipairs(WorldTerrain.roads) do
+		if road.half >= 6 then
+			alongRoad(road.pts, 36, 30, function(x, z, dx, dz, n)
+				local side = (n % 2 == 0) and 1 or -1
+				local lx, lz = x - dz * 10 * side, z + dx * 10 * side
+				if not WorldTerrain.plotAt(lx, lz, 3) and math.sqrt(lx * lx + lz * lz) > 70 then
+					place("Lamp_Post", lx, lz, math.deg(math.atan2(dx, dz)), hub)
+					reserve(lx, lz, 3)
+				end
+			end)
+		end
+	end
 	spawnArea("Hub", CFrame.new(0, 4, 40), Vector3.new(60, 6, 20))
 	return "hub ok"
 end
@@ -411,25 +469,27 @@ function WorldBuilder.plots()
 	for i = 1, Sanctuary.MAX_PLOTS do
 		local a = math.rad(15 + (i - 1) * 30)
 		local pos = Vector3.new(math.cos(a) * 205, 0, math.sin(a) * 205)
-		local facingHub = CFrame.lookAt(pos, Vector3.new(0, 0, 0))
-		-- lawn and a little path out to the ring road
-		T:FillBlock(facingHub * CFrame.new(0, -0.9, 0), Vector3.new(66, 1.8, 66), M.LeafyGrass)
-		T:FillBlock(facingHub * CFrame.new(0, -0.8, -44), Vector3.new(8, 1.6, 24), M.Ground)
+		local gy = ground(pos.X, pos.Z)
+		local facingHub = CFrame.lookAt(Vector3.new(pos.X, gy, pos.Z), Vector3.new(0, gy, 0))
 		local plot = folder("Plot_" .. i, plots)
-		local c = marker("Center", CFrame.new(pos.X, 0.5, pos.Z) * facingHub.Rotation, plot, Vector3.new(4, 1, 4))
+		-- the Center's BASE is the plot's ground level (SanctuaryService builds from it)
+		local c = marker("Center", CFrame.new(pos.X, gy + 0.5, pos.Z) * facingHub.Rotation, plot, Vector3.new(4, 1, 4))
 		c:SetAttribute("Plot", i)
 		reserve(pos.X, pos.Z, 48)
-		-- trees framing the back corners (outside the fence line) so every plot feels cosy
-		for _, off in ipairs({ { -40, 38 }, { 40, 36 }, { -44, 0 }, { 44, -6 } }) do
+		-- a lawn you can read as "a place": clipped bushes on the corners, trees behind
+		for _, off in ipairs({ { -30, -30 }, { 30, -30 }, { -30, 30 }, { 30, 30 } }) do
 			local wp = facingHub * CFrame.new(off[1], 0, off[2])
-			local name = ({ "Tree_Puffy_A", "Tree_Puffy_B", "Tree_Puffy_C", "Tree_Fruit" })[rng:NextInteger(1, 4)]
-			place(name, wp.X, wp.Z, nil, plot, rng:NextNumber(0.85, 1.1))
+			place("Bush_A", wp.X, wp.Z, nil, plot, 0.75)
 		end
-		for _, off in ipairs({ { -36, -30 }, { 36, -30 } }) do
-			local wp = facingHub * CFrame.new(off[1], 0, off[2])
-			place("Bush_B", wp.X, wp.Z, nil, plot)
-			place("FlowerPatch_Pink", wp.X + 3, wp.Z + 2, nil, plot)
+		for _, off in ipairs({ { -24, 44 }, { 0, 48 }, { 24, 44 } }) do
+			local wp = facingHub * CFrame.new(off[1] + rng:NextNumber(-4, 4), 0, off[2])
+			if not WorldTerrain.isPaved(wp.X, wp.Z, 4) then
+				local name = ({ "Tree_Puffy_A", "Tree_Puffy_B", "Tree_Puffy_C", "Tree_Fruit" })[rng:NextInteger(1, 4)]
+				place(name, wp.X, wp.Z, nil, plot, rng:NextNumber(0.85, 1.1))
+			end
 		end
+		local mail = facingHub * CFrame.new(-6, 0, -36)
+		place("Mailbox", mail.X, mail.Z, math.deg(a) + 90, plot)
 	end
 	return "plots ok"
 end
@@ -444,38 +504,30 @@ function WorldBuilder.meadow()
 	local deco = folder("Decor", mf)
 	local markers = folder("Markers", world)
 
-	-- rolling hills around the edges, flat fields in the middle
-	for _ = 1, 22 do
-		local a = rng:NextNumber(0, math.pi * 2)
-		local r = rng:NextNumber(130, 210)
-		local x, z = cx + math.cos(a) * r, cz + math.sin(a) * r
-		T:FillBall(Vector3.new(x, rng:NextNumber(-34, -24), z), rng:NextNumber(34, 50), M.Grass)
+	-- the pond (terrain carves it; we dress it)
+	local P = WorldTerrain.pond
+	reserve(P.x, P.z, P.r + 4)
+	for i = 1, 14 do
+		local a = i / 14 * math.pi * 2 + rng:NextNumber(-0.1, 0.1)
+		local rr = P.r + rng:NextNumber(1, 4)
+		place(i % 3 == 0 and "PondRim_Stone" or "Reeds", P.x + math.cos(a) * rr, P.z + math.sin(a) * rr, nil, deco, rng:NextNumber(0.8, 1.2), nil, { query = false })
 	end
-	-- the pond and a stream
-	local px, pz = cx - 30, cz + 80
-	T:FillCylinder(CFrame.new(px, -3, pz), 7, 26, M.Air)
-	T:FillCylinder(CFrame.new(px, -6, pz), 2, 26, M.Mud)
-	T:FillCylinder(CFrame.new(px, -2.8, pz), 4.6, 24, M.Water)
-	T:FillCylinder(CFrame.new(px, -0.5, pz), 1.2, 29, M.Sand)
-	T:FillCylinder(CFrame.new(px, -3, pz), 7, 24, M.Air)
-	T:FillCylinder(CFrame.new(px, -3.3, pz), 4.6, 24, M.Water)
-	reserve(px, pz, 32)
-	for i = 0, 12 do
-		local x = px + 26 + i * 8
-		local z = pz + 30 + math.sin(i * 0.6) * 10
-		T:FillBlock(CFrame.new(x, -2, z), Vector3.new(10, 4, 10), M.Air)
-		T:FillBlock(CFrame.new(x, -3, z), Vector3.new(10, 2.2, 9), M.Water)
-		reserve(x, z, 8)
-	end
-	place("Bridge_Wood", px + 66, pz + 34 + math.sin(5 * 0.6) * 10, 0, deco)
-	for i = 1, 8 do
-		local a = i / 8 * math.pi * 2
-		place(i % 2 == 0 and "Reeds" or "PondRim_Stone", px + math.cos(a) * 25, pz + math.sin(a) * 25, nil, deco)
-	end
-	for i = 1, 5 do
+	for _ = 1, 7 do
 		local a = rng:NextNumber(0, 6.28)
-		Kit.place("LilyPad", CFrame.new(px + math.cos(a) * rng:NextNumber(4, 18), -0.4, pz + math.sin(a) * rng:NextNumber(4, 18)), deco)
+		local rr = rng:NextNumber(4, P.r - 6)
+		Kit.place("LilyPad", CFrame.new(P.x + math.cos(a) * rr, P.water - 0.05, P.z + math.sin(a) * rr) * CFrame.Angles(0, a, 0), deco, { collide = false, query = false })
 	end
+	-- the stream, and a bridge where the meadow path crosses it
+	for i, pt in ipairs(WorldTerrain.stream) do
+		reserve(pt[1], pt[2], 8)
+		if i % 2 == 0 then
+			place("Reeds", pt[1] + rng:NextNumber(-7, 7), pt[2] + 7, nil, deco)
+		end
+	end
+	local crossX, crossZ = 503, 117
+	local bridgeY = ground(crossX + 12, crossZ - 8)
+	Kit.place("Bridge_Wood", faceCF(Vector3.new(crossX, bridgeY - 0.4, crossZ), Vector3.new(528, bridgeY, 146)), deco)
+	reserve(crossX, crossZ, 12)
 
 	-- gates (SPEC §11). Each gets a marker at its prompt position.
 	local gates = {
@@ -492,35 +544,122 @@ function WorldBuilder.meadow()
 		marker("Gate_" .. id, CFrame.new(g[1], ground(g[1], g[2]) + 3, g[2]), markers)
 		reserve(g[1], g[2], 16)
 	end
-	-- the hollow is a dark zone; the roots are a tiny gap
-	tagCollider("DarkZone", CFrame.new(cx + 154, 4, cz + 20), Vector3.new(14, 10, 12), mf)
-	tagCollider("TinyGap", CFrame.new(cx + 80, 2, cz + 150), Vector3.new(3, 4, 8), mf)
+	tagCollider("DarkZone", CFrame.new(cx + 154, ground(cx + 154, cz + 20) + 4, cz + 20), Vector3.new(14, 10, 12), mf)
+	tagCollider("TinyGap", CFrame.new(cx + 80, ground(cx + 80, cz + 150) + 2, cz + 150), Vector3.new(3, 4, 8), mf)
 
-	-- farm corner
-	for i = 0, 4 do
-		place("Hay_Bale", cx - 120 + i * 4, cz - 90 + (i % 2) * 3, rng:NextNumber(0, 40), deco)
-	end
-	place("Well", cx - 100, cz - 70, 30, deco)
-	for i = 0, 5 do
-		place("Fence_Straight", cx - 140 + i * 8, cz - 100, 0, deco)
-	end
-	reserve(cx - 115, cz - 85, 24)
-	place("Signpost", cx - 150, cz + 12, 270, deco)
+	place("Signpost", cx - 118, cz + 14, 270, deco)
 	marker("Travel_Meadow", CFrame.new(cx - 130, ground(cx - 130, cz) + 3, cz), markers)
 
-	-- vegetation
-	scatter({ "Tree_Puffy_A", "Tree_Puffy_B", "Tree_Puffy_C", "Tree_Fruit", "Tree_Pine_A", "Tree_Pine_B" }, 90, cx, cz, 210, deco, 9, { 0.85, 1.25 })
-	scatter({ "Bush_A", "Bush_B", "Bush_C" }, 70, cx, cz, 200, deco, 4, { 0.8, 1.3 })
-	scatter({ "Rock_Small_A", "Rock_Small_B", "Rock_Medium_A", "Rock_Medium_B", "Log_A", "Stump_A" }, 45, cx, cz, 200, deco, 4)
-	scatter({ "FlowerPatch_Yellow", "FlowerPatch_Pink", "FlowerPatch_Blue", "FlowerPatch_White", "Mushroom_Red" }, 180, cx, cz, 200, deco, 1.5, { 0.9, 1.4 })
-	scatter({ "GrassTuft_A", "GrassTuft_B" }, 240, cx, cz, 210, deco, 1)
+	-- vegetation in groves on the hills, open flower fields in the middle
+	grove({ "Tree_Puffy_A", "Tree_Puffy_B", "Tree_Puffy_C", "Tree_Fruit" }, 16, 7, cx, cz, 230, 30, deco, 8, { 0.85, 1.3 })
+	grove({ "Tree_Pine_A", "Tree_Pine_B" }, 6, 6, cx + 60, cz - 120, 90, 26, deco, 7, { 0.9, 1.3 })
+	grove({ "Bush_A", "Bush_B", "Bush_C" }, 18, 5, cx, cz, 230, 16, deco, 3.5, { 0.8, 1.3 })
+	grove({ "Rock_Small_A", "Rock_Small_B", "Rock_Medium_A", "Rock_Medium_B", "Log_A", "Stump_A" }, 12, 4, cx, cz, 220, 14, deco, 4)
+	grove({ "FlowerPatch_Yellow", "FlowerPatch_Pink", "FlowerPatch_Blue", "FlowerPatch_White", "Mushroom_Red" }, 22, 9, cx, cz, 150, 14, deco, 1.4, { 0.9, 1.5 })
+	grove({ "GrassTuft_A", "GrassTuft_B" }, 30, 10, cx, cz, 230, 16, deco, 1)
 
 	for i = 1, 4 do
 		spawnArea("Meadow", CFrame.new(cx + (i <= 2 and -60 or 60), 5, cz + (i % 2 == 0 and -60 or 60)), Vector3.new(90, 8, 90))
-		marker("EventSpot_Meadow_" .. i, CFrame.new(cx + (i <= 2 and -50 or 50), ground(cx, cz) + 2, cz + (i % 2 == 0 and -50 or 50)), markers)
+		local ex, ez = cx + (i <= 2 and -50 or 50), cz + (i % 2 == 0 and -50 or 50)
+		marker("EventSpot_Meadow_" .. i, CFrame.new(ex, ground(ex, ez) + 2, ez), markers)
 	end
-	marker("EventSpot_Meteor_1", CFrame.new(cx + 40, 2, cz - 40), markers)
+	marker("EventSpot_Meteor_1", CFrame.new(cx + 40, ground(cx + 40, cz - 40) + 2, cz - 40), markers)
 	return "meadow ok"
+end
+
+-- ═══ THE COUNTRYSIDE: four corners between the biomes ════════════════════════
+-- Nothing here is a gate or a spawn area. It exists so every direction you look from the
+-- plots has a place in it: pine woods, an orchard, a farm, and dunes by the sea.
+
+function WorldBuilder.countryside()
+	getWorld()
+	local cs = folder("Countryside", world)
+	local Z = WorldTerrain.zones
+
+	-- NE pine woods: dense, dark, with clearings, logs and mushrooms
+	local woods = folder("Woods", cs)
+	grove({ "Tree_Pine_A", "Tree_Pine_B" }, 16, 9, Z.woods.x, Z.woods.z, Z.woods.r - 20, 34, woods, 7, { 0.9, 1.5 }, { M.Grass, M.LeafyGrass })
+	grove({ "Log_A", "Stump_A", "Rock_Medium_A", "Mushroom_Red", "Bush_C" }, 12, 4, Z.woods.x, Z.woods.z, Z.woods.r, 20, woods, 4, { 0.8, 1.3 })
+	grove({ "GrassTuft_A", "GrassTuft_B", "FlowerPatch_White" }, 14, 8, Z.woods.x, Z.woods.z, Z.woods.r, 18, woods, 1.2)
+
+	-- NW orchard: rows of fruit trees along the lane, a windmill watching over them
+	local orchard = folder("Orchard", cs)
+	for row = -3, 3 do
+		for col = -3, 3 do
+			local x = Z.orchard.x + col * 22 + (row % 2) * 11
+			local z = Z.orchard.z + row * 20
+			local _, _, _, _ = x, z, row, col
+			if rng:NextNumber() < 0.85 and not WorldTerrain.isPaved(x, z, 5) then
+				place("Tree_Fruit", x + rng:NextNumber(-2, 2), z + rng:NextNumber(-2, 2), nil, orchard, rng:NextNumber(0.9, 1.15))
+				reserve(x, z, 6)
+			end
+		end
+	end
+	if Kit.has("Windmill") then
+		local wx, wz = Z.orchard.x - 110, Z.orchard.z + 40
+		local mill = place("Windmill", wx, wz, 135, orchard, 1.1)
+		if mill then
+			local sails = Kit.place("Windmill_Sails", mill:GetPivot() * CFrame.new(0, 11 * 1.1, -3.6 * 1.1), orchard, { collide = false, scale = 1.1 })
+			if sails then
+				CollectionService:AddTag(sails, "Spin")
+			end
+		end
+		reserve(wx, wz, 16)
+	end
+	for i = 0, 5 do
+		place("Hay_Bale", Z.orchard.x + 90 + (i % 3) * 5, Z.orchard.z + 70 + (i // 3) * 5, rng:NextNumber(0, 40), orchard)
+	end
+	scatter({ "FlowerPatch_Yellow", "GrassTuft_A", "Bush_B" }, 40, Z.orchard.x, Z.orchard.z, Z.orchard.r, orchard, 2)
+
+	-- SE farm: three rows of fields with a fence, a barn-shack, hay, a well and a scarecrow post
+	local farm = folder("Farm", cs)
+	local F = Z.farm
+	local fx, fz = F.x0, F.z0
+	local w, d = F.x1 - F.x0, F.z1 - F.z0
+	local function fenceLine(ax: number, az: number, bx: number, bz: number, gapAt: number?)
+		local len = math.sqrt((bx - ax) ^ 2 + (bz - az) ^ 2)
+		local n = math.floor(len / 8)
+		for k = 0, n - 1 do
+			if not gapAt or k ~= gapAt then
+				local t = (k + 0.5) / n
+				local x, z = ax + (bx - ax) * t, az + (bz - az) * t
+				place("Fence_Straight", x, z, math.deg(math.atan2(bx - ax, bz - az)) + 90, farm)
+			end
+		end
+	end
+	fenceLine(fx, fz + 14, fx, fz + d)
+	fenceLine(fx, fz + d, fx + w, fz + d)
+	fenceLine(fx + w, fz + d, fx + w, fz)
+	fenceLine(fx + w, fz, fx + 14, fz)
+	place("Shack", fx + w - 26, fz + d - 26, 225, farm, 1.8)
+	reserve(fx + w - 26, fz + d - 26, 20)
+	place("Well", fx + 30, fz + d - 20, 30, farm)
+	for i = 0, 7 do
+		place("Hay_Bale", fx + w - 60 + (i % 4) * 5, fz + 16 + (i // 4) * 5, rng:NextNumber(-15, 15), farm)
+	end
+	for i = 0, 5 do
+		place("Garden_Bed", fx + 40 + (i % 3) * 30, fz + 60 + (i // 3) * 40, 90, farm)
+	end
+
+	-- SW dunes: sand, driftwood, washed-up junk from the yard, rocks
+	local dunes = folder("Dunes", cs)
+	grove({ "Log_A", "Rock_Medium_A", "Rock_Medium_B", "Rock_Small_A", "Tire_Single", "Crate_B" }, 12, 4, Z.dunes.x, Z.dunes.z, Z.dunes.r, 22, dunes, 5, { 0.8, 1.3 })
+	grove({ "Reeds", "Bush_C", "GrassTuft_B" }, 14, 5, Z.dunes.x, Z.dunes.z, Z.dunes.r, 16, dunes, 2)
+
+	-- the whole coastline: rocks where the land meets the sea
+	for i = 1, 90 do
+		local a = i / 90 * math.pi * 2 + rng:NextNumber(-0.02, 0.02)
+		for rr = 300, 1000, 6 do
+			local x, z = math.cos(a) * rr, math.sin(a) * rr
+			if WorldTerrain.coastD(x, z) > 0.94 then
+				if rng:NextNumber() < 0.55 and z < 300 then
+					place(({ "Rock_Medium_A", "Rock_Medium_B", "Rock_Small_B" })[rng:NextInteger(1, 3)], x, z, nil, dunes, rng:NextNumber(1, 2.2))
+				end
+				break
+			end
+		end
+	end
+	return "countryside ok"
 end
 
 -- ═══ JUNKYARD ════════════════════════════════════════════════════════════════
@@ -533,35 +672,30 @@ function WorldBuilder.junkyard()
 	local deco = folder("Decor", jf)
 	local markers = folder("Markers", world)
 
-	T:FillCylinder(CFrame.new(cx, -1, cz), 2.2, 190, M.Ground)
-	for _ = 1, 26 do
-		local a = rng:NextNumber(0, 6.28)
-		local r = math.sqrt(rng:NextNumber()) * 170
-		T:FillCylinder(CFrame.new(cx + math.cos(a) * r, -0.9, cz + math.sin(a) * r), 2, rng:NextNumber(8, 22), rng:NextNumber() < 0.5 and M.Mud or M.Asphalt)
-	end
-	-- perimeter fence with a gap facing the road
-	for i = 0, 43 do
-		local a = i / 44 * math.pi * 2
-		if math.abs(math.cos(a) - 1) > 0.02 then
-			local x, z = cx + math.cos(a) * 182, cz + math.sin(a) * 182
-			if not (x > cx + 170 and math.abs(z - cz) < 14) then
-				Kit.place("ChainFence", CFrame.new(x, ground(x, z), z) * CFrame.Angles(0, -a + math.pi / 2, 0), deco)
-			end
+	-- the dirt basin and junk heaps are terrain (WorldTerrain); a continuous chain fence
+	-- rings the yard with one gate facing the road
+	local fenceR = 180
+	local segs = math.ceil(2 * math.pi * fenceR / 8.4)
+	for i = 0, segs - 1 do
+		local a = (i + 0.5) / segs * math.pi * 2
+		local x, z = cx + math.cos(a) * fenceR, cz + math.sin(a) * fenceR
+		if math.abs(math.atan2(math.sin(a), math.cos(a))) > 0.06 then
+			Kit.place("ChainFence", CFrame.new(x, ground(x, z), z) * CFrame.Angles(0, -a + math.pi / 2, 0), deco)
 		end
 	end
 	place("Sign_Danger", cx + 176, cz - 16, 90, deco)
-	marker("Travel_Junkyard", CFrame.new(cx + 150, 3, cz), markers)
+	marker("Travel_Junkyard", CFrame.new(cx + 150, ground(cx + 150, cz) + 3, cz), markers)
 
 	-- landmark + gates
 	local crane = place("Magnet_Crane", cx - 110, cz + 100, 30, jf)
 	if crane then
 		crane.Name = "Gate_JunkBigMachine_Model"
 	end
-	marker("Gate_JunkBigMachine", CFrame.new(cx - 104, 3, cz + 96), markers)
+	marker("Gate_JunkBigMachine", CFrame.new(cx - 104, ground(cx - 104, cz + 96) + 3, cz + 96), markers)
 	reserve(cx - 110, cz + 100, 22)
 
 	place("Generator_Dead", cx - 110, cz - 60, 90, jf)
-	marker("Gate_JunkGenerator", CFrame.new(cx - 104, 3, cz - 60), markers)
+	marker("Gate_JunkGenerator", CFrame.new(cx - 104, ground(cx - 104, cz - 60) + 3, cz - 60), markers)
 	-- the vault: containers around a yard with the reward inside
 	for i, spec in ipairs({ { -135, -40, 0 }, { -135, -80, 0 }, { -155, -60, 90 } }) do
 		place("Container_Shipping", cx + spec[1], cz + spec[2], spec[3], deco)
@@ -572,14 +706,16 @@ function WorldBuilder.junkyard()
 	-- glide towers: climb A by the crate stairs, glide down onto B
 	place("ScrapTower_A", cx - 20, cz + 140, 0, jf)
 	place("ScrapTower_B", cx + 14, cz + 140, 180, jf, 0.72)
+	-- crate stairs climb from the south straight up to tower A's platform
 	for i = 0, 6 do
-		place("Crate_A", cx - 20 - 8 - i * 3.2, cz + 132 + i * 0.3, i * 13, deco, 1, ground(cx - 28, cz + 132) + i * 2.8)
+		local sx, sz = cx - 20 + (i % 2) * 0.6, cz + 114 + i * 3.2
+		place("Crate_A", sx, sz, i * 13, deco, 1, ground(cx - 20, cz + 114) + i * 2.8)
 	end
 	marker("Gate_JunkTowers", CFrame.new(cx + 14, ground(cx + 14, cz + 140) + 15.5, cz + 140), markers)
 	reserve(cx, cz + 140, 30)
 
 	place("CrackedGround", cx + 70, cz - 150, 0, jf)
-	marker("Gate_JunkCracks", CFrame.new(cx + 70, 2, cz - 150), markers)
+	marker("Gate_JunkCracks", CFrame.new(cx + 70, ground(cx + 70, cz - 150) + 3, cz - 150), markers)
 	reserve(cx + 70, cz - 150, 12)
 
 	-- sticky climb: a stack of containers; the reward sits on top
@@ -590,15 +726,21 @@ function WorldBuilder.junkyard()
 	marker("Gate_JunkWall", CFrame.new(wx, ground(wx, wz) + 19, wz), markers)
 	reserve(wx, wz, 16)
 
-	-- junk everywhere
-	scatter({ "ScrapPile_A", "ScrapPile_B", "ScrapPile_C" }, 30, cx, cz, 165, deco, 8, { 0.9, 1.5 })
-	scatter({ "Tire_Single", "Tire_Stack", "Crate_A", "Crate_B", "OilDrum" }, 60, cx, cz, 165, deco, 3)
-	scatter({ "CarWreck", "Fridge_Old", "WashingMachine", "TV_Pile", "Pipe_Segment" }, 26, cx, cz, 160, deco, 7)
-	scatter({ "GrassTuft_A", "GrassTuft_B", "Rock_Small_A" }, 60, cx, cz, 180, deco, 1)
+	-- junk HEAPS, not confetti: piles crown each terrain heap, loose junk drifts around it,
+	-- and bare dirt lanes run between them
+	for _, hp in ipairs(WorldTerrain.heaps) do
+		local hx, hz = hp[1], hp[2]
+		place(({ "ScrapPile_A", "ScrapPile_B", "ScrapPile_C" })[rng:NextInteger(1, 3)], hx, hz, nil, deco, 1.2 + hp[4] / 10)
+		reserve(hx, hz, hp[3] * 0.35)
+		scatter({ "ScrapPile_A", "ScrapPile_B", "ScrapPile_C", "TV_Pile", "Tire_Stack" }, 3, hx, hz, hp[3] * 0.7, deco, 6, { 0.8, 1.3 })
+		scatter({ "Tire_Single", "Crate_B", "OilDrum", "Pipe_Segment", "Fridge_Old", "WashingMachine" }, 7, hx, hz, hp[3] * 1.3, deco, 3)
+	end
+	grove({ "CarWreck", "Fridge_Old", "WashingMachine", "OilDrum", "Tire_Stack" }, 8, 3, cx, cz, 150, 14, deco, 6)
+	grove({ "GrassTuft_A", "GrassTuft_B", "Rock_Small_A" }, 10, 6, cx, cz, 170, 18, deco, 1)
 	for i = 1, 4 do
 		spawnArea("Junkyard", CFrame.new(cx + (i <= 2 and -55 or 55), 5, cz + (i % 2 == 0 and -55 or 55)), Vector3.new(80, 8, 80))
 	end
-	marker("EventSpot_Meteor_2", CFrame.new(cx + 30, 2, cz + 20), markers)
+	marker("EventSpot_Meteor_2", CFrame.new(cx + 30, ground(cx + 30, cz + 20) + 2, cz + 20), markers)
 	return "junkyard ok"
 end
 
@@ -612,24 +754,20 @@ function WorldBuilder.caves()
 	local deco = folder("Decor", cf)
 	local markers = folder("Markers", world)
 
-	-- the mountain, then the cavern carved out of it, then a flat floor
-	T:FillBall(Vector3.new(cx, -40, cz), 170, M.Rock)
-	T:FillBall(Vector3.new(cx + 90, -30, cz - 60), 110, M.Slate)
-	T:FillBall(Vector3.new(cx - 100, -30, cz - 30), 100, M.Rock)
-	-- snow-ish grass cap on the peak so it reads from the plots
-	T:FillBall(Vector3.new(cx, 118, cz), 30, M.Grass)
+	-- the mountain is part of the island height function; carve the cavern and the tunnel
 	T:FillBall(Vector3.new(cx, 22, cz), 96, M.Air)
-	T:FillBlock(CFrame.new(cx, -6, cz), Vector3.new(220, 12, 220), M.Slate)
+	T:FillBlock(CFrame.new(cx, -2, cz), Vector3.new(220, 8, 220), M.Slate)
 	T:FillBall(Vector3.new(cx, 22, cz), 92, M.Air)
-	T:FillBlock(CFrame.new(cx, -3, cz), Vector3.new(170, 6, 170), M.Slate)
-	-- entrance tunnel from the road
-	for i = 0, 10 do
-		T:FillBall(Vector3.new(cx, 9, cz + 150 - i * 8), 13, M.Air)
+	T:FillBlock(CFrame.new(cx, -1, cz), Vector3.new(176, 6, 176), M.Slate)
+	-- the tunnel runs from the end of the north road's canyon into the cavern
+	for i = 0, 13 do
+		T:FillBall(Vector3.new(cx + math.sin(i * 0.5) * 3, 10, cz + 145 - i * 7), 13, M.Air)
 	end
-	T:FillBlock(CFrame.new(cx, -2, cz + 110), Vector3.new(22, 4, 90), M.Slate)
-	place("Cave_Arch", cx, cz + 158, 0, cf, 1, ground(cx, cz + 158, 12))
+	T:FillBlock(CFrame.new(cx, 0, cz + 110), Vector3.new(24, 4, 84), M.Slate)
+	task.wait(0.5) -- let the carve reach collision before anything raycasts the cave floor
+	place("Cave_Arch", cx, cz + 142, 0, cf, 1.15, ground(cx, cz + 142, 14))
 	rayFrom = 60 -- everything below is inside the cavern
-	marker("Travel_CrystalCaves", CFrame.new(cx, 3, cz + 175), markers)
+	marker("Travel_CrystalCaves", CFrame.new(cx, ground(cx, cz + 160, 40) + 3, cz + 160), markers)
 
 	-- darkness inside (Light ability matters) + crystals that glow
 	tagCollider("DarkZone", CFrame.new(cx, 25, cz), Vector3.new(180, 60, 180), cf)
@@ -670,10 +808,11 @@ function WorldBuilder.caves()
 			m.Name = "Gate_" .. id .. "_Model"
 		end
 		marker("Gate_" .. id, CFrame.new(x, ground(x, z, 60) + 3, z), markers)
+		local _ = rayFrom
 		reserve(x, z, 12)
 	end
 	gate("CaveGhost", "GhostBarrier", cx - 70, cz - 50, 60)
-	tagCollider("GhostBarrier", CFrame.new(cx - 70, 5, cz - 50) * CFrame.Angles(0, math.rad(60), 0), Vector3.new(8, 9, 1), cf, true, Color3.fromRGB(200, 170, 255), M.ForceField)
+	tagCollider("GhostBarrier", CFrame.new(cx - 70, 7, cz - 50) * CFrame.Angles(0, math.rad(60), 0), Vector3.new(8, 9, 1), cf, true, Color3.fromRGB(200, 170, 255), M.ForceField)
 	gate("CaveDeep", "Crystal_Big", cx + 10, cz - 80, 0, 1.3)
 	tagCollider("DarkZone", CFrame.new(cx + 10, 10, cz - 80), Vector3.new(30, 20, 20), cf)
 	gate("CaveHeat", "Crystal_Cluster_Pink", cx + 60, cz + 40, 0, 1.5)
@@ -681,19 +820,29 @@ function WorldBuilder.caves()
 	tagCollider("HotGround", CFrame.new(cx + 50, 1, cz + 30), Vector3.new(24, 4, 24), cf)
 	gate("CaveCoop", "CaveRock_C", cx - 40, cz + 50, 0, 1.4)
 	-- the earthquake pocket: sealed by a rock wall that the Earthquake event opens
-	local seal = tagCollider("QuakeSealPart", CFrame.new(cx + 76, 8, cz - 20), Vector3.new(2, 16, 20), cf, true, Color3.fromRGB(88, 94, 118), M.Slate)
+	local seal = tagCollider("QuakeSealPart", CFrame.new(cx + 76, 10, cz - 20), Vector3.new(2, 16, 20), cf, true, Color3.fromRGB(88, 94, 118), M.Slate)
 	seal.Name = "QuakeSeal"
 	seal.Transparency = 0
-	marker("EventSpot_Quake_1", CFrame.new(cx + 86, 2, cz - 20), markers)
-	marker("EventSpot_Caves_1", CFrame.new(cx, 2, cz), markers)
+	if Kit.has("Rock_Seal") then
+		-- the seal reads as a rockfall: the mesh sits in front of the (then invisible) collider
+		seal.Transparency = 1
+		local rock = Kit.place("Rock_Seal", CFrame.new(cx + 76, ground(cx + 76, cz - 20, 60), cz - 20) * CFrame.Angles(0, math.rad(90), 0), seal, { collide = false })
+		if rock then
+			rock.Name = "SealRocks"
+		end
+	end
+	marker("EventSpot_Quake_1", CFrame.new(cx + 86, ground(cx + 86, cz - 20, 60) + 2, cz - 20), markers)
+	marker("EventSpot_Caves_1", CFrame.new(cx, ground(cx, cz, 60) + 2, cz), markers)
 
 	scatter({ "Stalagmite_A", "Stalagmite_B", "CaveRock_A", "CaveRock_B" }, 40, cx, cz, 82, deco, 5, { 0.8, 1.5 })
 	scatter({ "GlowMushroom_A", "GlowMushroom_B" }, 30, cx, cz, 80, deco, 3)
 	scatter({ "Fossil_Ribs" }, 4, cx, cz, 70, deco, 10)
-	-- outside the mountain
-	rayFrom = 200
-	scatter({ "Tree_Pine_A", "Tree_Pine_B", "Rock_Medium_A", "CaveRock_B" }, 40, cx, cz + 175, 70, deco, 8)
-	spawnArea("CrystalCaves", CFrame.new(cx, 4, cz), Vector3.new(150, 6, 150))
+	-- outside: pines on the green lower slopes, boulders where the rock starts
+	rayFrom = 320
+	local mz = WorldTerrain.zones.mountain
+	grove({ "Tree_Pine_A", "Tree_Pine_B" }, 20, 6, mz.x, mz.z, mz.r, 30, deco, 7, { 0.9, 1.4 }, { M.Grass, M.LeafyGrass })
+	grove({ "Rock_Medium_A", "Rock_Medium_B", "CaveRock_A", "CaveRock_B" }, 14, 3, mz.x, mz.z, mz.r, 24, deco, 6, { 1.2, 2.2 }, { M.Rock, M.Grass })
+	spawnArea("CrystalCaves", CFrame.new(cx, 6, cz), Vector3.new(150, 6, 150))
 	return "caves ok"
 end
 
@@ -704,27 +853,28 @@ function WorldBuilder.ocean()
 	local of = folder("Ocean", folder("Biomes", world))
 	local deco = folder("Decor", of)
 	local markers = folder("Markers", world)
-	-- deeper water with a reef shelf
-	T:FillBlock(CFrame.new(0, -20, 540), Vector3.new(300, 36, 160), M.Water)
-	T:FillBlock(CFrame.new(0, -40, 540), Vector3.new(300, 6, 160), M.Sand)
-	for _ = 1, 30 do
-		T:FillBall(Vector3.new(rng:NextNumber(-130, 130), rng:NextNumber(-40, -26), rng:NextNumber(480, 600)), rng:NextNumber(5, 12), M.Rock)
+	-- the sea floor is terrain; the reef is coral-coloured rock outcrops rising from it
+	for _ = 1, 38 do
+		local x, z = rng:NextNumber(-150, 150), rng:NextNumber(470, 610)
+		T:FillBall(Vector3.new(x, rng:NextNumber(-26, -16), z), rng:NextNumber(5, 11), rng:NextNumber() < 0.6 and M.Rock or M.Sandstone)
 	end
+	T:SetMaterialColor(M.Sandstone, Color3.fromRGB(240, 140, 150))
 	tagCollider("DeepWater", CFrame.new(0, -20, 540), Vector3.new(300, 34, 160), of)
 	marker("Gate_OceanReef", CFrame.new(0, -30, 540), markers)
-	marker("Travel_Ocean", CFrame.new(0, 3, 380), markers)
-	spawnArea("Ocean", CFrame.new(0, 4, 380), Vector3.new(500, 6, 70))
-	-- beach dressing
-	scatter({ "Rock_Small_A", "Rock_Medium_B", "PondRim_Stone" }, 20, 0, 380, 200, deco, 4, nil, { M.Sand })
+	marker("Travel_Ocean", CFrame.new(0, ground(0, 380) + 3, 380), markers)
+	spawnArea("Ocean", CFrame.new(0, 4, 380), Vector3.new(500, 6, 60))
+	-- beach dressing: rock groups, driftwood, reeds at the back of the sand
+	grove({ "Rock_Small_A", "Rock_Medium_B", "PondRim_Stone", "Log_A" }, 12, 4, 0, 380, 220, 18, deco, 4, { 0.9, 1.6 }, { M.Sand })
+	grove({ "Reeds", "GrassTuft_B", "Bush_C" }, 10, 5, 0, 350, 240, 14, deco, 2, nil, { M.Sand, M.Grass })
 	-- locked until Update 1 ships (WorldState.UpdateLevel)
 	local lock = Instance.new("Part")
 	lock.Name = "OceanLock"
 	lock.Anchored = true
 	lock.Transparency = 1
-	lock.Size = Vector3.new(860, 60, 2)
-	lock.CFrame = CFrame.new(0, 30, 336)
+	lock.Size = Vector3.new(1100, 80, 2)
+	lock.CFrame = CFrame.new(0, 30, 428)
 	lock.Parent = of
-	local sign = place("Signpost", 12, 326, 0, of)
+	local sign = place("Signpost", 12, 404, 0, of)
 	if sign and sign.PrimaryPart then
 		local gui = Instance.new("SurfaceGui")
 		gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
@@ -746,7 +896,7 @@ end
 function WorldBuilder.strange()
 	getWorld()
 	local sf = folder("StrangeZone", folder("Biomes", world))
-	local c = Vector3.new(0, 240, -820)
+	local c = Vector3.new(-560, 230, -640)
 	T:FillBall(c - Vector3.new(0, 30, 0), 50, M.Basalt)
 	T:FillBall(c - Vector3.new(0, 6, 0), 44, M.LeafyGrass)
 	T:FillBlock(CFrame.new(c + Vector3.new(0, 30, 0)), Vector3.new(120, 60, 120), M.Air)
@@ -755,7 +905,7 @@ function WorldBuilder.strange()
 		local p = c + Vector3.new(math.cos(a) * 28, 0, math.sin(a) * 28)
 		local m = Kit.place(i % 2 == 0 and "Crystal_Big" or "Tree_Puffy_B", CFrame.new(p.X, ground(p.X, p.Z, 320), p.Z) * CFrame.Angles(0, a, 0.2), sf, { scale = 1.5 })
 		if m and m.PrimaryPart then
-			m.PrimaryPart.Color = i % 2 == 0 and Color3.fromRGB(255, 120, 255) or Color3.fromRGB(170, 120, 255)
+			m.PrimaryPart.Color = i % 2 == 0 and Color3.fromRGB(255, 170, 255) or Color3.fromRGB(215, 190, 255)
 			local l = Instance.new("PointLight")
 			l.Color = Color3.fromRGB(200, 120, 255)
 			l.Range = 40
@@ -776,7 +926,7 @@ end
 function WorldBuilder.trials()
 	getWorld()
 	local tf = folder("Trials", world)
-	local ox = 2200
+	local ox = 6000
 
 	local function platform(cf: CFrame, size: Vector3, mat: Enum.Material)
 		T:FillBlock(cf * CFrame.new(0, -size.Y / 2, 0), size, mat)
@@ -789,8 +939,8 @@ function WorldBuilder.trials()
 		local mk = folder("Markers", r)
 		local cz = 0
 		platform(CFrame.new(ox, 0, cz), Vector3.new(260, 8, 200), M.Grass)
-		T:FillBlock(CFrame.new(ox, 2, cz), Vector3.new(180, 8, 110), M.Air)
-		T:FillBlock(CFrame.new(ox, -30, cz), Vector3.new(180, 50, 110), M.Air)
+		T:FillBlock(CFrame.new(ox, -30, cz), Vector3.new(182, 76, 112), M.Air)
+		task.wait(0.5)
 		local pts = {
 			Vector3.new(ox - 110, 0, cz - 80), Vector3.new(ox, 0, cz - 82), Vector3.new(ox + 110, 0, cz - 80), Vector3.new(ox + 118, 0, cz),
 			Vector3.new(ox + 110, 0, cz + 80), Vector3.new(ox, 0, cz + 82), Vector3.new(ox - 110, 0, cz + 80), Vector3.new(ox - 118, 0, cz - 10),
@@ -805,13 +955,14 @@ function WorldBuilder.trials()
 		for i = 1, 8 do
 			marker("Spawn_" .. i, CFrame.new(ox - 118 + (i - 4.5) * 4, 3, cz - 30) * CFrame.Angles(0, math.rad(180), 0), mk)
 		end
-		Kit.place("Race_StartGate", CFrame.new(ox - 118, 0, cz - 20), r)
+		Kit.place("Race_StartGate", CFrame.new(ox - 118, ground(ox - 118, cz - 20, 40), cz - 20), r)
 		for i = 1, 6 do
-			Kit.place("Obstacle_Bumper", CFrame.new(ox + rng:NextNumber(-100, 100), 0, cz + (i % 2 == 0 and -80 or 80) + rng:NextNumber(-6, 6)), r)
+			local bx, bz = ox + rng:NextNumber(-100, 100), cz + (i % 2 == 0 and -80 or 80) + rng:NextNumber(-6, 6)
+			Kit.place("Obstacle_Bumper", CFrame.new(bx, ground(bx, bz, 40), bz), r)
 		end
 		-- glide shortcut ramp across the middle gap
 		T:FillWedge(CFrame.new(ox - 60, 6, cz - 60) * CFrame.Angles(0, math.rad(90), 0), Vector3.new(14, 12, 30), M.Grass)
-		marker("Return", CFrame.new(-36, 2, 22), mk)
+		marker("Return", CFrame.new(-36, 6, 22), mk)
 	end
 
 	-- SMASH: a round arena with 24 smash spots
@@ -829,7 +980,7 @@ function WorldBuilder.trials()
 		for i = 1, 8 do
 			marker("Spawn_" .. i, CFrame.new(c.X + (i - 4.5) * 5, 3, c.Z), mk)
 		end
-		marker("Return", CFrame.new(-36, 2, 22), mk)
+		marker("Return", CFrame.new(-36, 6, 22), mk)
 	end
 
 	-- TREASURE: rolling dunes with 40 buried spots
@@ -849,7 +1000,7 @@ function WorldBuilder.trials()
 			marker("Spawn_" .. i, CFrame.new(c.X + (i - 4.5) * 5, 8, c.Z), mk)
 		end
 		scatter({ "Rock_Medium_A", "Tree_Pine_A", "Bush_C" }, 24, c.X, c.Z, 115, t, 8)
-		marker("Return", CFrame.new(-36, 2, 22), mk)
+		marker("Return", CFrame.new(-36, 6, 22), mk)
 	end
 
 	-- OBSTACLE CHAOS: floating islands over a void; hurdles, bumpers, beams; secret routes
@@ -862,13 +1013,14 @@ function WorldBuilder.trials()
 		for i = 0, 7 do
 			local p = Vector3.new(ox + (i % 2 == 0 and -10 or 10), i * 2, z0 + i * 44)
 			T:FillCylinder(CFrame.new(p.X, p.Y - 3, p.Z), 6, 16, M.Grass)
+			task.wait(0.1)
 			table.insert(islands, p)
 			marker("Checkpoint_" .. (i + 1), CFrame.new(p + Vector3.new(0, 4, 0)), mk, Vector3.new(24, 10, 24))
 			if i > 0 then
 				local prev = islands[i]
 				local mid = (prev + p) / 2
 				Kit.place("Balance_Beam", CFrame.lookAt(Vector3.new(mid.X, mid.Y - 0.5, mid.Z), Vector3.new(p.X, mid.Y - 0.5, p.Z)), o)
-				Kit.place(i % 2 == 0 and "Obstacle_Hurdle" or "Obstacle_Bumper", CFrame.new(p.X + 4, p.Y, p.Z - 6), o)
+				Kit.place(i % 2 == 0 and "Obstacle_Hurdle" or "Obstacle_Bumper", CFrame.new(p.X + 4, ground(p.X + 4, p.Z - 6, p.Y + 20), p.Z - 6), o)
 			end
 		end
 		-- secret routes: a Tiny gap and a Sticky wall shortcut
@@ -877,7 +1029,7 @@ function WorldBuilder.trials()
 		for i = 1, 8 do
 			marker("Spawn_" .. i, CFrame.new(islands[1] + Vector3.new((i - 4.5) * 2.5, 4, -4)), mk)
 		end
-		marker("Return", CFrame.new(-36, 2, 22), mk)
+		marker("Return", CFrame.new(-36, 6, 22), mk)
 	end
 
 	-- SWIM (Update 1): a ring course in open water near the reef
@@ -897,7 +1049,7 @@ function WorldBuilder.trials()
 		for i = 1, 8 do
 			marker("Spawn_" .. i, CFrame.new(c.X + 90, 3, c.Z + (i - 4.5) * 4), mk)
 		end
-		marker("Return", CFrame.new(-36, 2, 22), mk)
+		marker("Return", CFrame.new(-36, 6, 22), mk)
 	end
 	return "trials ok"
 end
@@ -912,15 +1064,20 @@ function WorldBuilder.spawn()
 	s.CanCollide = false
 	s.Neutral = true
 	s.Size = Vector3.new(8, 1, 8)
-	s.CFrame = CFrame.new(0, 1, 36)
+	s.CFrame = CFrame.new(0, ground(0, 36) + 0.5, 36)
 	s.Parent = workspace
 	return "spawn ok"
 end
 
 function WorldBuilder.all()
 	local out = {}
-	for _, step in ipairs({ "clear", "terrain", "hub", "plots", "meadow", "junkyard", "caves", "ocean", "strange", "trials", "spawn" }) do
+	for _, step in ipairs({ "clear", "terrain", "hub", "plots", "meadow", "countryside", "junkyard", "caves", "ocean", "strange", "trials", "spawn" }) do
 		table.insert(out, (WorldBuilder :: any)[step]())
+		if step == "terrain" then
+			-- freshly written voxels are not raycastable until the engine steps; every
+			-- placement below raycasts the ground
+			task.wait(1)
+		end
 	end
 	return table.concat(out, ", ")
 end

@@ -1,0 +1,227 @@
+Placement checks against the sampled terrain heightfield (6-stud grid, so slopes are +-1-2 studs).
+
+== FLOATING: base above the highest ground under the footprint by >1 stud (33)
+  #Block @ (5978, 10, 1700)                        +999.0  no terrain below (void)
+  Junk/Crate_A @ (-470, 22, 133)                   +16.8  base 20.8, ground 4.0..4.0
+  Junk/Crate_A @ (-469, 20, 130)                   +14.0  base 18.0, ground 4.0..4.0
+  Junk/Crate_A @ (-470, 17, 127)                   +11.2  base 15.2, ground 4.0..4.0
+  Hub/Race_Ring @ (6050, -6, 2250)                 +11.0  base -11.0, ground -22.0..-22.0
+  Hub/Race_Ring @ (6050, -6, 2150)                 +11.0  base -11.0, ground -22.0..-22.0
+  Hub/Race_Ring @ (6000, -6, 2270)                 +11.0  base -11.0, ground -22.0..-22.0
+  Hub/Race_Ring @ (6000, -6, 2130)                 +11.0  base -11.0, ground -22.0..-22.0
+  Hub/Race_Ring @ (5950, -6, 2250)                 +11.0  base -11.0, ground -22.0..-22.0
+  Hub/Race_Ring @ (5950, -6, 2150)                 +11.0  base -11.0, ground -22.0..-22.0
+  Hub/Race_Ring @ (5930, -6, 2200)                 +11.0  base -11.0, ground -22.0..-22.0
+  Junk/Crate_A @ (-469, 14, 124)                   +8.4  base 12.4, ground 4.0..4.0
+  Junk/Container_Shipping @ (-600, 18, -150)       +8.4  base 13.8, ground 4.9..5.4
+  Hub/Windmill_Sails @ (-443, 16, -257)            +7.0  base 11.0, ground 3.9..4.0
+  Hub/Bunting_Span @ (52, 12, 0)                   +6.4  base 10.4, ground 4.0..4.0
+  Hub/Bunting_Span @ (37, 12, 37)                  +6.4  base 10.4, ground 4.0..4.0
+  Hub/Bunting_Span @ (37, 12, -37)                 +6.4  base 10.4, ground 4.0..4.0
+  Hub/Bunting_Span @ (0, 12, 52)                   +6.4  base 10.4, ground 4.0..4.0
+  Hub/Bunting_Span @ (0, 12, -52)                  +6.4  base 10.4, ground 4.0..4.0
+  Hub/Bunting_Span @ (-52, 12, 0)                  +6.4  base 10.4, ground 4.0..4.0
+  Hub/Bunting_Span @ (-37, 12, 37)                 +6.4  base 10.4, ground 4.0..4.0
+  Hub/Bunting_Span @ (-37, 12, -37)                +6.4  base 10.4, ground 4.0..4.0
+  Junk/Crate_A @ (-470, 11, 120)                   +5.6  base 9.6, ground 4.0..4.0
+  Junk/Crate_A @ (-469, 8, 117)                    +2.8  base 6.8, ground 4.0..4.0
+  Hub/Race_Ring @ (6070, -6, 2200)                 +2.7  base -11.0, ground -22.0..-13.7
+  Meadow/Bush_C @ (5990, 7, 1040)                  +2.2  base 5.7, ground 2.2..3.5
+  Meadow/LilyPad @ (424, 1, 81)                    +1.7  base 1.2, ground -0.5..-0.5
+  Meadow/LilyPad @ (423, 1, 74)                    +1.7  base 1.2, ground -0.5..-0.5
+  Meadow/LilyPad @ (412, 1, 77)                    +1.7  base 1.2, ground -0.5..-0.5
+  Meadow/LilyPad @ (414, 1, 73)                    +1.6  base 1.2, ground -0.5..-0.4
+  Meadow/Reeds @ (444, 6, 95)                      +1.4  base 4.0, ground 2.1..2.6
+  Junk/ScrapPile_B @ (-500, 16, 150)               +1.2  base 11.2, ground 8.5..9.9
+  Hub/Portal_Disc @ (-44, 10, 28)                  +1.0  base 5.0, ground 4.0..4.0
+
+== BURIED: >45% of height below ground at centre (10)
+  Meadow/GrassTuft_B @ (288, 7, 92)                283%  base 6.5, height 0.7, ground 8.6
+  Meadow/GrassTuft_B @ (292, 7, 94)                273%  base 6.9, height 0.7, ground 8.9
+  Meadow/GrassTuft_A @ (286, 6, 92)                194%  base 6.0, height 1.1, ground 8.0
+  Meadow/Stump_A @ (249, 8, -69)                   170%  base 7.6, height 1.3, ground 9.7
+  Meadow/GrassTuft_B @ (275, 5, -13)               147%  base 4.9, height 0.7, ground 6.0
+  Meadow/Rock_Medium_A @ (244, 7, -81)             131%  base 5.7, height 2.4, ground 8.9
+  Meadow/GrassTuft_A @ (571, 22, -179)             120%  base 21.8, height 1.0, ground 23.0
+  Meadow/Rock_Medium_B @ (-10, 6, -323)            113%  base 4.9, height 2.3, ground 7.4
+  Meadow/GrassTuft_A @ (274, 5, -12)               102%  base 4.6, height 1.1, ground 5.6
+  Meadow/Log_A @ (398, 11, -153)                    46%  base 9.6, height 2.4, ground 10.7
+
+== UNDER TERRAIN SURFACE (inside caves / under hills) (111)
+  Junk/Crystal_Cluster_Purple @ (-51, 7, -515)     143.9 below
+  Junk/Crystal_Cluster_Pink @ (24, 6, -540)        178.2 below
+  Junk/Crystal_Cluster_Cyan @ (-35, 7, -451)       135.5 below
+  Junk/Crystal_Cluster_Purple @ (-75, 7, -468)     121.0 below
+  Junk/Crystal_Cluster_Pink @ (1, 6, -506)         200.6 below
+  Junk/Crystal_Cluster_Cyan @ (-17, 7, -395)       81.1 below
+  Junk/Crystal_Cluster_Purple @ (2, 7, -476)       174.7 below
+  Junk/Crystal_Cluster_Pink @ (58, 6, -469)        129.0 below
+  Junk/Crystal_Cluster_Cyan @ (28, 7, -472)        157.2 below
+  Junk/Crystal_Cluster_Purple @ (-68, 7, -491)     131.8 below
+  Junk/Crystal_Cluster_Cyan @ (43, 7, -434)        113.5 below
+  Junk/Crystal_Cluster_Purple @ (63, 8, -459)      116.2 below
+  Junk/Crystal_Cluster_Pink @ (42, 6, -530)        163.2 below
+  Junk/Crystal_Cluster_Cyan @ (-44, 6, -468)       136.4 below
+  Junk/Crystal_Cluster_Purple @ (34, 6, -540)      170.3 below
+  Junk/Crystal_Cluster_Pink @ (7, 6, -458)         161.1 below
+  Junk/Crystal_Cluster_Cyan @ (56, 7, -428)        110.8 below
+  Junk/Crystal_Cluster_Purple @ (-63, 8, -496)     132.0 below
+  Junk/Crystal_Cluster_Pink @ (29, 6, -510)        184.5 below
+  Junk/Crystal_Cluster_Cyan @ (38, 6, -499)        161.3 below
+  Junk/Crystal_Cluster_Purple @ (-36, 7, -412)     107.8 below
+  Junk/Crystal_Cluster_Pink @ (-16, 6, -443)       134.2 below
+  Junk/Crystal_Cluster_Cyan @ (12, 4, -418)        122.7 below
+  Junk/Crystal_Cluster_Purple @ (9, 8, -547)       168.8 below
+  Junk/Crystal_Cluster_Cyan @ (14, 6, -459)        164.7 below
+  Junk/Crystal_Cluster_Purple @ (48, 8, -524)      147.9 below
+  Junk/Crystal_Cluster_Pink @ (-13, 6, -451)       143.2 below
+  Junk/Crystal_Cluster_Cyan @ (-1, 7, -435)        131.7 below
+  Junk/Crystal_Cluster_Purple @ (-4, 8, -473)      166.7 below
+  Junk/Crystal_Cluster_Pink @ (52, 6, -504)        145.4 below
+  Junk/Crystal_Cluster_Cyan @ (-8, 7, -431)        122.2 below
+  Junk/Crystal_Cluster_Purple @ (-70, 6, -453)     123.2 below
+  Junk/Crystal_Big @ (50, 10, -510)                137.1 below
+  Junk/Crystal_Big @ (-55, 10, -440)               99.9 below
+  Junk/Crystal_Big @ (10, 11, -540)                170.5 below
+  Junk/Stalagmite_A @ (66, 8, -478)                124.1 below
+  Junk/CaveRock_B @ (3, 6, -522)                   189.4 below
+  Junk/CaveRock_B @ (-44, 7, -517)                 145.1 below
+  Junk/CaveRock_A @ (-16, 6, -528)                 180.1 below
+  Junk/Stalagmite_B @ (-61, 8, -479)               129.8 below
+  Junk/CaveRock_B @ (-28, 7, -437)                 126.7 below
+  Junk/Stalagmite_B @ (5, 6, -430)                 129.9 below
+  Junk/CaveRock_A @ (-5, 6, -499)                  198.5 below
+  Junk/Stalagmite_A @ (14, 8, -393)                91.5 below
+  Junk/CaveRock_A @ (-67, 5, -468)                 129.8 below
+  Junk/CaveRock_B @ (29, 8, -485)                  153.8 below
+  Junk/CaveRock_A @ (-41, 5, -508)                 156.5 below
+  Junk/Stalagmite_B @ (54, 7, -491)                139.2 below
+  Junk/Stalagmite_B @ (-32, 7, -537)               172.2 below
+  Junk/CaveRock_B @ (7, 7, -470)                   164.5 below
+  Junk/CaveRock_B @ (26, 7, -463)                  154.9 below
+  Junk/CaveRock_B @ (49, 7, -464)                  130.6 below
+  Junk/CaveRock_A @ (20, 7, -519)                  187.9 below
+  Junk/Stalagmite_A @ (10, 8, -516)                189.5 below
+  Junk/Stalagmite_B @ (-22, 7, -539)               173.5 below
+  Junk/CaveRock_B @ (-11, 7, -488)                 187.4 below
+  Junk/Stalagmite_B @ (39, 6, -458)                149.0 below
+  Junk/Stalagmite_A @ (-63, 8, -504)               134.9 below
+  Junk/CaveRock_A @ (-16, 6, -421)                 110.5 below
+  Junk/Stalagmite_A @ (-57, 7, -455)               133.1 below
+  Junk/CaveRock_A @ (-13, 6, -472)                 163.7 below
+  Junk/CaveRock_B @ (-23, 7, -408)                 89.4 below
+  Junk/Stalagmite_A @ (-39, 9, -472)               133.5 below
+  Junk/Stalagmite_B @ (19, 6, -409)                108.1 below
+  Junk/Stalagmite_A @ (29, 8, -546)                162.2 below
+  Junk/Stalagmite_B @ (39, 6, -423)                104.9 below
+  Junk/Stalagmite_B @ (21, 7, -527)                184.7 below
+  Junk/CaveRock_B @ (-31, 6, -510)                 169.2 below
+  Junk/CaveRock_B @ (22, 7, -499)                  176.3 below
+  Junk/Stalagmite_A @ (2, 5, -422)                 119.0 below
+  Junk/Stalagmite_B @ (73, 7, -449)                105.1 below
+  Junk/Stalagmite_B @ (-30, 6, -501)               172.0 below
+  Junk/CaveRock_B @ (-54, 7, -490)                 133.0 below
+  Junk/CaveRock_B @ (-24, 6, -548)                 165.3 below
+  Junk/CaveRock_B @ (4, 7, -496)                   194.2 below
+  Junk/GlowMushroom_A @ (-15, 6, -404)             92.8 below
+  Junk/GlowMushroom_B @ (-32, 6, -519)             176.0 below
+  Junk/GlowMushroom_A @ (-17, 7, -466)             154.3 below
+  Junk/GlowMushroom_B @ (-9, 4, -410)              105.3 below
+  Junk/GlowMushroom_B @ (5, 6, -510)               198.8 below
+  Junk/GlowMushroom_A @ (15, 7, -404)              108.2 below
+  Junk/GlowMushroom_A @ (8, 7, -394)               99.6 below
+  Junk/GlowMushroom_A @ (25, 6, -493)              176.4 below
+  Junk/GlowMushroom_B @ (-26, 6, -426)             120.9 below
+  Junk/GlowMushroom_B @ (66, 6, -493)              136.5 below
+  Junk/GlowMushroom_B @ (15, 6, -446)              143.5 below
+  Junk/GlowMushroom_B @ (-48, 6, -504)             149.6 below
+  Junk/GlowMushroom_A @ (40, 6, -452)              142.3 below
+  Junk/GlowMushroom_B @ (-44, 6, -492)             148.1 below
+  Junk/GlowMushroom_A @ (37, 7, -490)              156.0 below
+  Junk/GlowMushroom_A @ (-13, 6, -460)             153.0 below
+  Junk/GlowMushroom_B @ (-43, 6, -445)             133.9 below
+  Junk/GlowMushroom_A @ (-0, 6, -452)              149.6 below
+  Junk/GlowMushroom_B @ (-7, 6, -442)              136.5 below
+  Junk/GlowMushroom_A @ (-10, 7, -509)             197.5 below
+  Junk/GlowMushroom_A @ (72, 6, -496)              135.0 below
+  Junk/GlowMushroom_A @ (-3, 7, -429)              125.0 below
+  Junk/GlowMushroom_B @ (-53, 6, -472)             133.5 below
+  Junk/GlowMushroom_A @ (37, 6, -444)              128.5 below
+  Junk/GlowMushroom_B @ (-28, 6, -475)             152.1 below
+  Junk/GlowMushroom_B @ (-61, 6, -468)             132.4 below
+  Junk/GlowMushroom_B @ (26, 6, -432)              118.7 below
+  Junk/GlowMushroom_A @ (-9, 7, -464)              158.3 below
+  Junk/GlowMushroom_B @ (-8, 6, -514)              195.3 below
+  Junk/GlowMushroom_A @ (47, 7, -457)              138.5 below
+  Junk/GhostBarrier @ (-70, 9, -520)               131.7 below
+  #Block @ (-70, 7, -520)                          135.0 below
+  Junk/Crystal_Big @ (10, 13, -550)                148.1 below
+  Junk/Crystal_Cluster_Pink @ (60, 6, -430)        112.4 below
+  Junk/CaveRock_C @ (-40, 8, -420)                 107.4 below
+  #Block @ (76, 10, -490)                          120.1 below
+
+== IN WATER (base below water surface) (0)
+
+== ON ROADS (footprint overlaps the road bands WorldBuilder.onRoad keeps clear) (12)
+  Hub/Parade_Runway @ (0, 5, -60)                  N-S road
+  Hub/Bunting_Span @ (0, 12, 52)                   N-S road
+  Hub/Bunting_Span @ (-52, 12, 0)                  E-W road
+  Hub/Bunting_Span @ (0, 12, -52)                  N-S road
+  Hub/Bunting_Span @ (52, 12, 0)                   E-W road
+  Hub/Lamp_Post @ (232, 9, -2)                     E-W road
+  Hub/Lamp_Post @ (-232, 9, 4)                     E-W road
+  Hub/Lamp_Post @ (-340, 9, -7)                    E-W road
+  Hub/Lamp_Post @ (-4, 9, -233)                    N-S road
+  Hub/Lamp_Post @ (4, 9, 234)                      N-S road
+  Hub/Lamp_Post @ (8, 9, 305)                      N-S road
+  Junk/Cave_Arch @ (0, 11, -328)                   N-S road
+
+== ON PLOT LAWNS (66x66 around each plot centre) (48)
+  Meadow/Bush_A @ (161, 5, 74)                     plot 1
+  Meadow/Bush_A @ (177, 5, 16)                     plot 1
+  Meadow/Bush_A @ (219, 5, 90)                     plot 1
+  Meadow/Bush_A @ (235, 5, 32)                     plot 1
+  Meadow/Bush_A @ (102, 5, 145)                    plot 2
+  Meadow/Bush_A @ (145, 5, 102)                    plot 2
+  Meadow/Bush_A @ (145, 5, 187)                    plot 2
+  Meadow/Bush_A @ (187, 5, 145)                    plot 2
+  Meadow/Bush_A @ (16, 5, 177)                     plot 3
+  Meadow/Bush_A @ (74, 5, 161)                     plot 3
+  Meadow/Bush_A @ (32, 5, 235)                     plot 3
+  Meadow/Bush_A @ (90, 5, 219)                     plot 3
+  Meadow/Bush_A @ (-74, 5, 161)                    plot 4
+  Meadow/Bush_A @ (-16, 5, 177)                    plot 4
+  Meadow/Bush_A @ (-90, 5, 219)                    plot 4
+  Meadow/Bush_A @ (-32, 5, 235)                    plot 4
+  Meadow/Bush_A @ (-145, 5, 102)                   plot 5
+  Meadow/Bush_A @ (-102, 5, 145)                   plot 5
+  Meadow/Bush_A @ (-187, 5, 145)                   plot 5
+  Meadow/Bush_A @ (-145, 5, 187)                   plot 5
+  Meadow/Bush_A @ (-177, 5, 16)                    plot 6
+  Meadow/Bush_A @ (-161, 5, 74)                    plot 6
+  Meadow/Bush_A @ (-235, 5, 32)                    plot 6
+  Meadow/Bush_A @ (-219, 5, 90)                    plot 6
+  Meadow/Bush_A @ (-161, 5, -74)                   plot 7
+  Meadow/Bush_A @ (-177, 5, -16)                   plot 7
+  Meadow/Bush_A @ (-219, 5, -90)                   plot 7
+  Meadow/Bush_A @ (-235, 5, -32)                   plot 7
+  Meadow/Bush_A @ (-102, 5, -145)                  plot 8
+  Meadow/Bush_A @ (-145, 5, -102)                  plot 8
+  Meadow/Bush_A @ (-145, 5, -187)                  plot 8
+  Meadow/Bush_A @ (-187, 5, -145)                  plot 8
+  Meadow/Bush_A @ (-16, 5, -177)                   plot 9
+  Meadow/Bush_A @ (-74, 5, -161)                   plot 9
+  Meadow/Bush_A @ (-32, 5, -235)                   plot 9
+  Meadow/Bush_A @ (-90, 5, -219)                   plot 9
+  Meadow/Bush_A @ (74, 5, -161)                    plot 10
+  Meadow/Bush_A @ (16, 5, -177)                    plot 10
+  Meadow/Bush_A @ (90, 5, -219)                    plot 10
+  Meadow/Bush_A @ (32, 5, -235)                    plot 10
+  Meadow/Bush_A @ (145, 5, -102)                   plot 11
+  Meadow/Bush_A @ (102, 5, -145)                   plot 11
+  Meadow/Bush_A @ (187, 5, -145)                   plot 11
+  Meadow/Bush_A @ (145, 5, -187)                   plot 11
+  Meadow/Bush_A @ (177, 5, -16)                    plot 12
+  Meadow/Bush_A @ (161, 5, -74)                    plot 12
+  Meadow/Bush_A @ (235, 5, -32)                    plot 12
+  Meadow/Bush_A @ (219, 5, -90)                    plot 12

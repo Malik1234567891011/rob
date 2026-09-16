@@ -109,9 +109,10 @@ function HomePanel.build(body: Frame, ctx)
 		end
 
 		-- decor shop
-		local slots = Sanctuary.slotsFor(tier)
+		local plus = profile.passes and profile.passes.SanctuaryPlus == true
+		local slots = #Sanctuary.slotsFor(tier, plus)
 		local used = #(profile.sanctuary and profile.sanctuary.decor or {})
-		header(string.format("DECORATE  (%d / %d spots used)", used, slots), 20)
+		header(string.format("DECORATE  (%d / %d spots used)%s", used, slots, plus and "  🏡+" or ""), 20)
 		local shop = Instance.new("Frame")
 		shop.BackgroundTransparency = 1
 		shop.Size = UDim2.new(1, -8, 0, 0)
@@ -121,9 +122,14 @@ function HomePanel.build(body: Frame, ctx)
 		Theme.grid(shop, Vector2.new(120, 116), 8)
 		for i, id in ipairs(Sanctuary.decorOrder) do
 			local def = Sanctuary.decor[id]
-			local cost = "🪙 " .. Theme.fmt(def.price) .. (def.essence and (" 🔮" .. def.essence) or "")
+			local locked = def.plus and not plus
+			local cost = locked and "🏡+ Builder pass" or ("🪙 " .. Theme.fmt(def.price) .. (def.essence and (" 🔮" .. def.essence) or ""))
 			Theme.button({ emoji = def.emoji, sub = def.display .. "\n" .. cost, size = UDim2.fromOffset(120, 116), textSize = 34, order = i,
-				parent = shop, color = profile.coins >= def.price and Theme.PAPER or Theme.PAPER2, onClick = function()
+				parent = shop, color = (not locked and profile.coins >= def.price) and Theme.PAPER or Theme.PAPER2, onClick = function()
+					if locked then
+						ctx.open("Shop")
+						return
+					end
 					local r = ctx.Net.func("SanctuaryDecor"):InvokeServer("buy", id)
 					ctx.toast({ title = r and r.ok and "PLACED" or "CAN'T PLACE", label = r and r.ok and (def.emoji .. " " .. def.display) or tostring(r and r.reason),
 						color = r and r.ok and 0x58C4C4 or 0xEC6060 })

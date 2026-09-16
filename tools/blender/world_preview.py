@@ -9,9 +9,17 @@ Run (from anywhere):
     /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
         -P ~/rob/tools/blender/world_preview.py -- [--views hub_overview,meadow] [--fast]
         [--samples 16] [--res 1280x720] [--no-refs] [--no-sheet] [--list]
+        [--cam "name=px,py,pz:lx,ly,lz[:fov]"]   # ad-hoc camera in Roblox coords, repeatable
 
-Outputs: art/previews/world/<view>.jpg, _sheet.jpg (needs system python3 + PIL) and
-_checks.txt (numeric placement checks: floating / buried / on-road / on-plot parts).
+All views take ~40 s at 1280x720 (Eevee). Outputs: art/previews/world/<view>.jpg, _sheet.jpg
+(labelled contact sheet, needs system python3 + PIL) and _checks.txt (numeric placement
+checks: floating / buried / under terrain / on roads / on plot lawns, with coordinates).
+The pink capsules are 5-stud character stand-ins for judging scale (--no-refs hides them).
+
+Limits: terrain is a HEIGHTFIELD from a top-down raycast, so overhangs don't exist here: cave
+interiors, the tunnel mouth under the Cave_Arch, and anything under the mountain are hidden.
+Floating terrain (Strange Zone) gets a guessed tapered underside. Materials/lighting are
+approximations; layout, scale, density and colour blocking are what this is for.
 
 Coordinates. 1 stud = 1 Blender unit. The kit FBX export maps Blender (x, y, z) to Roblox
 (-x, z, y), so Roblox (X, Y, Z) -> Blender (-X, Z, Y) and a CFrame rotation R converts to
@@ -52,11 +60,11 @@ HORIZON_HEX = "CFE3F2"
 SUN_HEX = "FFF0D8"
 REF_HEX = "FF3B6B"
 
-SEA_LEVEL = -1.5          # Roblox sea surface (WorldBuilder fills water to -1.5)
+SEA_LEVEL = 0.0           # Roblox sea surface (WorldTerrain: sea level 0)
 SEA_FLOOR = -30.0
-SEA_EXTENT = (-1100, 1100, -1150, 1100)  # x0, x1, z0, z1 of the Roblox sea fill
+SEA_EXTENT = (-3000, 3000, -3000, 3000)  # x0, x1, z0, z1 of the Roblox sea fill
 CUT = 60.0                # a grid quad spanning more height than this is a discontinuity (floating island edge)
-SKIRT_MAX = 60.0          # skirt depth under a floating edge
+SKIRT_MAX = 60.0          # skirt depth down a cliff that the 6-stud grid can't connect
 SKIRT_VOID = 8.0          # skirt depth where terrain ends at void
 UNDER_EDGE = 2.5          # floating terrain: thickness at its rim
 UNDER_SLOPE = 1.1         # ...growing by this many studs per stud inward
@@ -70,27 +78,32 @@ PLOT0 = (205 * C15, 205 * S15)
 VIEWS = {
     "hub_overview": ((0, 140, 300), (0, 0, 0), 70),
     "hub_close": ((60, 30, 90), (0, 5, 0), 70),
-    "plots_ring": ((0, 420, 0), (0, 0, -1), 70),
+    "plots_ring": ((0, 460, 60), (0, 0, 0), 70),
     "plot_close": ((PLOT0[0] + 40, 40, PLOT0[1] + 60), (PLOT0[0], 0, PLOT0[1]), 70),
-    "meadow": ((380, 110, 40), (540, 0, 0), 70),
-    "junkyard": ((-360, 110, 60), (-520, 0, 0), 70),
-    "caves_outside": ((0, 120, -330), (0, 40, -520), 70),
-    "ocean": ((0, 80, 380), (0, -20, 540), 70),
-    "strange": ((120, 300, -700), (0, 240, -820), 70),
-    "trials_race": ((2150, 80, -80), (2200, 0, 100), 70),
-    "world_top": ((0, 1400, -100), (0, 0, -120), 78),
+    "meadow": ((300, 120, 60), (470, 0, 20), 70),
+    "junkyard": ((-280, 110, 70), (-470, 0, 0), 70),
+    "caves_outside": ((60, 140, -180), (0, 60, -470), 70),
+    "ocean": ((0, 80, 330), (0, -10, 520), 70),
+    "strange": ((-400, 290, -560), (-560, 230, -640), 70),
+    "trials_race": ((5950, 80, -80), (6000, 0, 100), 70),
+    "world_top": ((0, 1700, -150), (0, 0, -160), 78),
     # extra close-ups: the places a player actually stands
     "hub_ground": ((22, 9, 34), (0, 5, -50), 70),
     "meadow_road": ((180, 26, 26), (300, 6, -6), 70),
-    "caves_entrance": ((14, 22, -262), (0, 10, -312), 70),
-    "junk_towers": ((-430, 34, 100), (-475, 10, 138), 70),
-    "trials_obstacle": ((2262, 50, 1470), (2200, 6, 1640), 70),
+    "caves_entrance": ((16, 24, -250), (0, 10, -330), 70),
+    "junk_towers": ((-430, 34, 90), (-470, 12, 138), 70),
+    "trials_obstacle": ((6062, 50, 1470), (6000, 6, 1640), 70),
+    "farm": ((180, 60, 160), (290, 0, 270), 70),
+    "woods": ((260, 70, -180), (370, 10, -300), 70),
+    "orchard": ((-230, 50, -180), (-330, 0, -300), 70),
+    "pond": ((380, 30, 40), (440, 0, 100), 70),
+    "from_plot": ((150, 12, 150), (0, 20, -400), 70),
 }
 
 # 5-stud character stand-ins (Roblox x, z) so scale reads at a glance
 REFS = [
     (0, 36), (36, 20), (-8, -60), (PLOT0[0], PLOT0[1]), (PLOT0[0] - 20, PLOT0[1] - 6), (420, 40), (300, 4),
-    (-290, 4), (-450, 0), (0, -300), (0, 380), (2082, -34), (2200, -70),
+    (-290, 4), (-450, 0), (0, -330), (0, 380), (5882, -34), (6000, -70),
 ]
 
 C3 = Matrix(((-1, 0, 0), (0, 0, 1), (0, 1, 0)))
@@ -576,13 +589,11 @@ def verify_axes(parts, sources):
         sx, sy, sz = p["size"]
         r = (sx / max(d.x, 1e-4), sy / max(d.z, 1e-4), sz / max(d.y, 1e-4))
         spread = (max(r) - min(r)) / max(min(r), 1e-4)
-        aniso = (max(d) - min(d)) / max(min(d), 1e-3)
         if spread < 0.04:
             ok += 1
         else:
             bad += 1
             worst.append((spread, p["kind"], tuple(round(v, 2) for v in r)))
-        _ = aniso
     worst.sort(reverse=True)
     g = next((p for p in parts if p["kind"] == "Meadow/GrassTuft_A"), None)
     gd = sources.get(("Meadow", "GrassTuft_A"))
@@ -773,8 +784,7 @@ def build_terrain_region(reg, names, mats, coll):
     # tapered undersides for floating components
     nunder = 0
     if floating.any():
-        D = np.where(floating, np.inf, np.inf)
-        edge = floating.copy()
+        D = np.full(floating.shape, np.inf)
         inner = floating.copy()
         inner[1:, :] &= floating[:-1, :]
         inner[:-1, :] &= floating[1:, :]

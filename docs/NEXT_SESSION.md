@@ -1,5 +1,23 @@
 # Handoff: resume here
 
+## Latest (2026-09-16 evening)
+- **Place is PUBLISHED:** "Feed a Monster", placeId 89616734304159, private, Team Create on
+  (cloud autosave). Studio API access is on, so DataStore works in playtests.
+  `PlayerDataService.wipe` via DevHooks (`run`, "$me") resets your save to a true new player.
+- **Seeing play mode:** `screen_capture` is magenta during Play. Use macOS
+  `screencapture -l <windowId>` on the Studio window (see memory roblox-studio-mcp-limits).
+  Studio must be the active app, or frames are stale.
+- **FTUE was play-tested as a new player 6 times and fixed.** Egg V in view, camera turned
+  to eggs, menus hidden until first meal, one-tap first feed, camera push-in, pet prompt
+  after first feed, emoji that Roblox can't draw replaced.
+- **Void Fang** (from Malik's character sheet) is installed as `Assets.Creatures.Forms.VoidFang`.
+  It is a secret mutation form (Dark/Ancient/Heavy, Mythic), and a legend paces the north canyon.
+  Malik loved it.
+- **Next:**
+  - Panel UI pass at phone size (Feed/Monster/Book/Home/Shop).
+  - The baby's first visible change is still subtle.
+  - Re-run the test suites after today's changes.
+
 **Updated 2026-09-16 (afternoon).** The plan is `docs/COMPLETION_PLAN.md`: the whole game, not an MVP.
 Malik explicitly rejected both the MVP scope and `generate_mesh`. Blender is the art pipeline.
 

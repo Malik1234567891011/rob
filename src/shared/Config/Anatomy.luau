@@ -8,7 +8,8 @@
 -- A part variant is a list of PIECES the builder instantiates from primitives:
 --   shape     : Ball | Block | Cylinder | Wedge
 --   size      : {x,y,z} in body-relative units (scaled by creature size)
---   offset    : {x,y,z} from the attachment point
+--   offset    : body slots -> fraction of the torso's PER-AXIS half-extent
+--                (1.0 == exactly on the surface). head slots -> multiples of headUnit.
 --   rot       : {rx,ry,rz} degrees
 --   colorMode : "primary" | "secondary" | "trait" | <hex number>
 --   material  : Roblox material name (default SmoothPlastic)
@@ -24,7 +25,7 @@ Anatomy.bodies = {
 	Cute = {
 		display = "Cute",
 		torso = { shape = "Ball", size = { 2.3, 2.1, 2.7 } },
-		headScale = 1.20, headForward = 1.45, headLift = 0.75,
+		headScale = 1.20, headForward = 1.00, headLift = 0.75,
 		legLength = 0.85, legSpread = 0.62,
 		baseColor = 0xFFC9D6,
 		-- biases fed into temperament generation (SPEC §18)
@@ -34,7 +35,7 @@ Anatomy.bodies = {
 	Heavy = {
 		display = "Heavy",
 		torso = { shape = "Block", size = { 3.1, 2.4, 3.6 } },
-		headScale = 0.92, headForward = 1.95, headLift = 0.45,
+		headScale = 0.92, headForward = 1.02, headLift = 0.45,
 		legLength = 1.15, legSpread = 0.86,
 		baseColor = 0x8C8478,
 		temperament = { lazy = 0.3, brave = 0.3, greedy = 0.2 },
@@ -43,7 +44,7 @@ Anatomy.bodies = {
 	Weird = {
 		display = "Weird",
 		torso = { shape = "Ball", size = { 2.0, 2.8, 2.2 } },
-		headScale = 1.05, headForward = 1.25, headLift = 1.35,
+		headScale = 1.05, headForward = 0.98, headLift = 1.35,
 		legLength = 1.45, legSpread = 0.48,
 		baseColor = 0xA77BFF,
 		temperament = { mischievous = 0.3, curious = 0.3, nervous = 0.2 },
@@ -136,58 +137,58 @@ Anatomy.parts = {
 	Back = {
 		None     = { display = "Bare Back", pieces = {} },
 		Spikes   = { display = "Spines", pieces = {
-			{ shape = "Wedge", size = {0.18,0.46,0.3}, offset = {0,0.62,0.34},  colorMode = "secondary" },
-			{ shape = "Wedge", size = {0.2,0.56,0.32}, offset = {0,0.66,-0.04}, colorMode = "secondary" },
-			{ shape = "Wedge", size = {0.16,0.4,0.28}, offset = {0,0.58,-0.42}, colorMode = "secondary" } } },
+			{ shape = "Wedge", size = {0.18,0.46,0.3}, offset = {0,1.15,0.38},  colorMode = "secondary" },
+			{ shape = "Wedge", size = {0.2,0.56,0.32}, offset = {0,1.22,-0.05}, colorMode = "secondary" },
+			{ shape = "Wedge", size = {0.16,0.4,0.28}, offset = {0,1.08,-0.48}, colorMode = "secondary" } } },
 		Shell    = { display = "Shell", pieces = {
-			{ shape = "Ball", size = {1.5,0.9,1.7}, offset = {0,0.5,0}, colorMode = "secondary" } } },
+			{ shape = "Ball", size = {1.5,0.9,1.7}, offset = {0,0.9,0}, colorMode = "secondary" } } },
 		Wings    = { display = "Butterfly Wings", mirror = true, pieces = {
-			{ shape = "Block", size = {0.08,1.5,1.7}, offset = {0.72,0.75,0.2},  rot = {0,-22,16}, colorMode = "trait" },
-			{ shape = "Block", size = {0.07,1.0,1.1}, offset = {0.82,0.2,-0.55}, rot = {0,-26,10}, colorMode = "secondary" } } },
+			{ shape = "Block", size = {0.08,1.5,1.7}, offset = {0.85,1.35,0.22},  rot = {0,-22,16}, colorMode = "trait" },
+			{ shape = "Block", size = {0.07,1.0,1.1}, offset = {0.95,0.35,-0.62}, rot = {0,-26,10}, colorMode = "secondary" } } },
 		Fins     = { display = "Back Fin", pieces = {
-			{ shape = "Wedge", size = {0.12,0.85,1.5}, offset = {0,0.72,0.1}, colorMode = "trait" } } },
+			{ shape = "Wedge", size = {0.12,0.85,1.5}, offset = {0,1.3,0.12}, colorMode = "trait" } } },
 		Mushroom = { display = "Mushroom Cluster", pieces = {
-			{ shape = "Cylinder", size = {0.14,0.34,0.14}, offset = {0.3,0.62,0.2},   colorMode = 0xF0E6D2 },
-			{ shape = "Ball",     size = {0.6,0.34,0.6},   offset = {0.3,0.82,0.2},   colorMode = "trait" },
-			{ shape = "Cylinder", size = {0.11,0.26,0.11}, offset = {-0.24,0.6,-0.3}, colorMode = 0xF0E6D2 },
-			{ shape = "Ball",     size = {0.46,0.26,0.46}, offset = {-0.24,0.75,-0.3},colorMode = "trait" } } },
+			{ shape = "Cylinder", size = {0.14,0.34,0.14}, offset = {0.45,1.15,0.22},   colorMode = 0xF0E6D2 },
+			{ shape = "Ball",     size = {0.6,0.34,0.6},   offset = {0.45,1.5,0.22},   colorMode = "trait" },
+			{ shape = "Cylinder", size = {0.11,0.26,0.11}, offset = {-0.36,1.1,-0.34}, colorMode = 0xF0E6D2 },
+			{ shape = "Ball",     size = {0.46,0.26,0.46}, offset = {-0.36,1.38,-0.34},colorMode = "trait" } } },
 		Screen   = { display = "Belly Screen", pieces = {
-			{ shape = "Block", size = {1.15,0.95,0.12}, offset = {0,0.0,-0.82}, colorMode = 0x2E2E2E },
-			{ shape = "Block", size = {0.95,0.75,0.08}, offset = {0,0.0,-0.9},  colorMode = 0x8FD6FF, material = "Neon" } } },
+			{ shape = "Block", size = {1.15,0.95,0.12}, offset = {0,0.0,-0.95}, colorMode = 0x2E2E2E },
+			{ shape = "Block", size = {0.95,0.75,0.08}, offset = {0,0.0,-1.02},  colorMode = 0x8FD6FF, material = "Neon" } } },
 	},
 
 	Tail = {
 		None    = { display = "No Tail", pieces = {} },
 		Stub    = { display = "Stubby Tail", pieces = {
-			{ shape = "Ball", size = {0.42,0.42,0.5}, offset = {0,0.1,0.95}, colorMode = "primary" } } },
+			{ shape = "Ball", size = {0.42,0.42,0.5}, offset = {0,0.2,1.1}, colorMode = "primary" } } },
 		Long    = { display = "Long Tail", pieces = {
-			{ shape = "Cylinder", size = {0.26,0.8,0.26}, offset = {0,0.2,1.0},  rot = {70,0,0}, colorMode = "primary" },
-			{ shape = "Cylinder", size = {0.2,0.7,0.2},   offset = {0,0.52,1.5}, rot = {48,0,0}, colorMode = "primary" },
-			{ shape = "Ball",     size = {0.26,0.26,0.26},offset = {0,0.8,1.8},  colorMode = "secondary" } } },
+			{ shape = "Cylinder", size = {0.26,0.8,0.26}, offset = {0,0.4,1.15},  rot = {70,0,0}, colorMode = "primary" },
+			{ shape = "Cylinder", size = {0.2,0.7,0.2},   offset = {0,1.0,1.7}, rot = {48,0,0}, colorMode = "primary" },
+			{ shape = "Ball",     size = {0.26,0.26,0.26},offset = {0,1.55,2.05},  colorMode = "secondary" } } },
 		Fluffy  = { display = "Fluffy Tail", pieces = {
-			{ shape = "Ball", size = {0.75,0.8,0.75}, offset = {0,0.45,1.05}, colorMode = "secondary" },
-			{ shape = "Ball", size = {0.5,0.55,0.5},  offset = {0,0.85,1.2},  colorMode = "secondary" } } },
+			{ shape = "Ball", size = {0.75,0.8,0.75}, offset = {0,0.85,1.2}, colorMode = "secondary" },
+			{ shape = "Ball", size = {0.5,0.55,0.5},  offset = {0,1.6,1.38},  colorMode = "secondary" } } },
 		Bolt    = { display = "Lightning Tail", pieces = {
-			{ shape = "Wedge", size = {0.16,0.6,0.3}, offset = {0,0.3,1.0},  rot = {0,0,22},  colorMode = "trait", material = "Neon" },
-			{ shape = "Wedge", size = {0.14,0.5,0.26},offset = {0,0.72,1.25},rot = {0,0,-30}, colorMode = "trait", material = "Neon" } } },
+			{ shape = "Wedge", size = {0.16,0.6,0.3}, offset = {0,0.55,1.15},  rot = {0,0,22},  colorMode = "trait", material = "Neon" },
+			{ shape = "Wedge", size = {0.14,0.5,0.26},offset = {0,1.35,1.42},rot = {0,0,-30}, colorMode = "trait", material = "Neon" } } },
 		FishTail= { display = "Fish Tail", pieces = {
-			{ shape = "Wedge", size = {0.12,0.9,0.8},  offset = {0,0.3,1.15}, rot = {0,0,0},   colorMode = "trait" },
-			{ shape = "Wedge", size = {0.12,0.7,0.6},  offset = {0,0.2,1.35}, rot = {0,180,0}, colorMode = "trait" } } },
+			{ shape = "Wedge", size = {0.12,0.9,0.8},  offset = {0,0.55,1.3}, rot = {0,0,0},   colorMode = "trait" },
+			{ shape = "Wedge", size = {0.12,0.7,0.6},  offset = {0,0.4,1.55}, rot = {0,180,0}, colorMode = "trait" } } },
 	},
 
 	Legs = {
 		Stubby = { display = "Stubby Legs", mirror = true, pieces = {
-			{ shape = "Cylinder", size = {0.4,0.5,0.4}, offset = {0.5,-0.45,-0.55}, colorMode = "secondary" },
-			{ shape = "Cylinder", size = {0.4,0.5,0.4}, offset = {0.5,-0.45,0.6},   colorMode = "secondary" } } },
+			{ shape = "Cylinder", size = {0.4,0.5,0.4}, offset = {0.85,-0.92,-0.62}, colorMode = "secondary" },
+			{ shape = "Cylinder", size = {0.4,0.5,0.4}, offset = {0.85,-0.92,0.68},   colorMode = "secondary" } } },
 		Long   = { display = "Long Legs", mirror = true, pieces = {
-			{ shape = "Cylinder", size = {0.26,1.3,0.26}, offset = {0.46,-0.85,-0.5}, colorMode = "secondary" },
-			{ shape = "Cylinder", size = {0.26,1.3,0.26}, offset = {0.46,-0.85,0.55}, colorMode = "secondary" } } },
+			{ shape = "Cylinder", size = {0.26,1.3,0.26}, offset = {0.78,-1.55,-0.56}, colorMode = "secondary" },
+			{ shape = "Cylinder", size = {0.26,1.3,0.26}, offset = {0.78,-1.55,0.62}, colorMode = "secondary" } } },
 		Chunky = { display = "Chunky Legs", mirror = true, pieces = {
-			{ shape = "Block", size = {0.62,0.7,0.62}, offset = {0.62,-0.6,-0.7}, colorMode = "secondary" },
-			{ shape = "Block", size = {0.62,0.7,0.62}, offset = {0.62,-0.6,0.75}, colorMode = "secondary" } } },
+			{ shape = "Block", size = {0.46,0.6,0.46}, offset = {0.82,-1.02,-0.8}, colorMode = "secondary" },
+			{ shape = "Block", size = {0.46,0.6,0.46}, offset = {0.82,-1.02,0.86}, colorMode = "secondary" } } },
 		Noodle = { display = "Noodle Legs", mirror = true, pieces = {
-			{ shape = "Cylinder", size = {0.16,1.5,0.16}, offset = {0.4,-0.95,-0.4}, rot = {0,0,8},  colorMode = "secondary" },
-			{ shape = "Cylinder", size = {0.16,1.5,0.16}, offset = {0.44,-0.95,0.5}, rot = {0,0,-8}, colorMode = "secondary" } } },
+			{ shape = "Cylinder", size = {0.16,1.5,0.16}, offset = {0.7,-1.7,-0.45}, rot = {0,0,8},  colorMode = "secondary" },
+			{ shape = "Cylinder", size = {0.16,1.5,0.16}, offset = {0.75,-1.7,0.56}, rot = {0,0,-8}, colorMode = "secondary" } } },
 	},
 }
 

@@ -28,6 +28,12 @@ Progression.LOCK_AT_STAGE   = 4     -- stable traits start locking into genes he
 Progression.GROWTH_PER_FEED = 0.018
 Progression.MAX_SIZE_DRIFT  = 0.45
 
+-- Mutation sizeMul stacks multiplicatively (Gigantism x Monarch x Everything = 3.1x),
+-- which ran away to 8.7x base in the first smoke test. Clamp per stage so Mythic is
+-- spectacular but bounded: 6.5 x a ~2.5-stud torso lands near the 15-foot creature
+-- the thumbnail promises (SPEC thumbnail promise, 14 Giant/Mythic).
+Progression.MAX_SCALE = { 1.25, 1.90, 2.80, 4.20, 6.50 }
+
 function Progression.stage(n: number)
 	return Progression.stages[math.clamp(n, 1, #Progression.stages)]
 end

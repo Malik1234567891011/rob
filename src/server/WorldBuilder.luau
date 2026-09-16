@@ -282,20 +282,20 @@ function WorldBuilder.terrain(bandFrom: number?, bandTo: number?)
 	-- saturated but natural (SPEC §40)
 	T:SetMaterialColor(M.Grass, Color3.fromRGB(104, 176, 72))
 	T:SetMaterialColor(M.LeafyGrass, Color3.fromRGB(96, 164, 70))
-	T:SetMaterialColor(M.Ground, Color3.fromRGB(176, 142, 100))
-	T:SetMaterialColor(M.Sand, Color3.fromRGB(236, 214, 160))
+	T:SetMaterialColor(M.Ground, Color3.fromRGB(160, 124, 88))
+	T:SetMaterialColor(M.Sand, Color3.fromRGB(206, 176, 124))
 	T:SetMaterialColor(M.Rock, Color3.fromRGB(122, 130, 150))
 	T:SetMaterialColor(M.Slate, Color3.fromRGB(88, 94, 118))
-	T:SetMaterialColor(M.Cobblestone, Color3.fromRGB(196, 186, 170))
-	T:SetMaterialColor(M.Mud, Color3.fromRGB(122, 98, 76))
+	T:SetMaterialColor(M.Cobblestone, Color3.fromRGB(168, 156, 142))
+	T:SetMaterialColor(M.Mud, Color3.fromRGB(96, 76, 60))
 	T:SetMaterialColor(M.Asphalt, Color3.fromRGB(96, 94, 100))
 	T:SetMaterialColor(M.Basalt, Color3.fromRGB(70, 64, 86))
 	T:SetMaterialColor(M.CrackedLava, Color3.fromRGB(255, 120, 40))
-	T.WaterColor = Color3.fromRGB(60, 170, 210)
-	T.WaterTransparency = 0.55
-	T.WaterWaveSize = 0.12
-	T.WaterWaveSpeed = 8
-	T.WaterReflectance = 0.6
+	T.WaterColor = Color3.fromRGB(38, 128, 150)
+	T.WaterTransparency = 0.4
+	T.WaterWaveSize = 0.15
+	T.WaterWaveSpeed = 9
+	T.WaterReflectance = 0.45
 	pcall(function()
 		(T :: any).Decoration = true -- grass decoration; not scriptable in every context
 	end)
@@ -476,10 +476,21 @@ function WorldBuilder.plots()
 		local c = marker("Center", CFrame.new(pos.X, gy + 0.5, pos.Z) * facingHub.Rotation, plot, Vector3.new(4, 1, 4))
 		c:SetAttribute("Plot", i)
 		reserve(pos.X, pos.Z, 48)
-		-- a lawn you can read as "a place": clipped bushes on the corners, trees behind
-		for _, off in ipairs({ { -30, -30 }, { 30, -30 }, { -30, 30 }, { 30, 30 } }) do
+		-- a lot you can read as "a place" even before anyone moves in: lanterns at the gate,
+		-- a flower border along the front, round bushes on the back corners, trees behind
+		for _, off in ipairs({ { -9, -33 }, { 9, -33 } }) do
 			local wp = facingHub * CFrame.new(off[1], 0, off[2])
-			place("Bush_A", wp.X, wp.Z, nil, plot, 0.75)
+			Kit.place("Lantern_Post", CFrame.new(wp.X, ground(wp.X, wp.Z), wp.Z) * facingHub.Rotation, plot)
+		end
+		for k = -3, 3 do
+			if math.abs(k) > 0 then
+				local wp = facingHub * CFrame.new(k * 8 + (k > 0 and 2 or -2), 0, -34)
+				place(({ "FlowerPatch_Yellow", "FlowerPatch_Pink", "FlowerPatch_Blue", "FlowerPatch_White" })[(k + 4) % 4 + 1], wp.X, wp.Z, nil, plot, 1.3, nil, { query = false })
+			end
+		end
+		for _, off in ipairs({ { -31, 31 }, { 31, 31 }, { -31, -2 }, { 31, -2 } }) do
+			local wp = facingHub * CFrame.new(off[1], 0, off[2])
+			place(math.abs(off[2]) > 10 and "Bush_B" or "Bush_A", wp.X, wp.Z, nil, plot, 1.15)
 		end
 		for _, off in ipairs({ { -24, 44 }, { 0, 48 }, { 24, 44 } }) do
 			local wp = facingHub * CFrame.new(off[1] + rng:NextNumber(-4, 4), 0, off[2])
@@ -637,8 +648,40 @@ function WorldBuilder.countryside()
 	for i = 0, 7 do
 		place("Hay_Bale", fx + w - 60 + (i % 4) * 5, fz + 16 + (i // 4) * 5, rng:NextNumber(-15, 15), farm)
 	end
-	for i = 0, 5 do
-		place("Garden_Bed", fx + 40 + (i % 3) * 30, fz + 60 + (i // 3) * 40, 90, farm)
+	-- crops: rows of the real ingredient props growing in the dirt fields
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local props = ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage.Assets:FindFirstChild("Props")
+	local crops = { "Carrot", "Pumpkin", "Watermelon", "Strawberry", "Sunflower", "Pumpkin" }
+	local fieldN = 0
+	for cxI = 0, 2 do
+		for czI = 0, 2 do
+			if (cxI + czI) % 2 == 0 then
+				fieldN += 1
+				local crop = crops[(fieldN - 1) % #crops + 1]
+				local src = props and props:FindFirstChild(crop)
+				for row = 0, 4 do
+					for col = 0, 6 do
+						local x = F.x0 + cxI * 64 + 14 + col * 6.5
+						local z = F.z0 + czI * 50 + 13 + row * 6
+						if src and not WorldTerrain.isPaved(x, z, 1) then
+							local m = (src :: Model):Clone()
+							m:ScaleTo(crop == "Sunflower" and 2 or 1.5)
+							local ext = m:GetExtentsSize()
+							m:PivotTo(CFrame.new(x + rng:NextNumber(-0.6, 0.6), ground(x, z) + ext.Y * 0.5 - 0.3, z) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0))
+							for _, d in ipairs(m:GetDescendants()) do
+								if d:IsA("BasePart") then
+									d.Anchored = true
+									d.CanCollide = false
+									d.CanQuery = false
+									d.CastShadow = false
+								end
+							end
+							m.Parent = farm
+						end
+					end
+				end
+			end
+		end
 	end
 
 	-- SW dunes: sand, driftwood, washed-up junk from the yard, rocks
@@ -730,9 +773,9 @@ function WorldBuilder.junkyard()
 	-- and bare dirt lanes run between them
 	for _, hp in ipairs(WorldTerrain.heaps) do
 		local hx, hz = hp[1], hp[2]
-		place(({ "ScrapPile_A", "ScrapPile_B", "ScrapPile_C" })[rng:NextInteger(1, 3)], hx, hz, nil, deco, 1.2 + hp[4] / 10)
-		reserve(hx, hz, hp[3] * 0.35)
-		scatter({ "ScrapPile_A", "ScrapPile_B", "ScrapPile_C", "TV_Pile", "Tire_Stack" }, 3, hx, hz, hp[3] * 0.7, deco, 6, { 0.8, 1.3 })
+		place(({ "ScrapPile_A", "ScrapPile_B", "ScrapPile_C" })[rng:NextInteger(1, 3)], hx, hz, nil, deco, 2 + hp[4] / 12)
+		reserve(hx, hz, hp[3] * 0.3)
+		scatter({ "ScrapPile_A", "ScrapPile_B", "ScrapPile_C", "TV_Pile", "Tire_Stack", "CarWreck" }, 5, hx, hz, hp[3] * 0.75, deco, 7, { 1.2, 2.0 })
 		scatter({ "Tire_Single", "Crate_B", "OilDrum", "Pipe_Segment", "Fridge_Old", "WashingMachine" }, 7, hx, hz, hp[3] * 1.3, deco, 3)
 	end
 	grove({ "CarWreck", "Fridge_Old", "WashingMachine", "OilDrum", "Tire_Stack" }, 8, 3, cx, cz, 150, 14, deco, 6)
@@ -863,6 +906,12 @@ function WorldBuilder.ocean()
 	marker("Gate_OceanReef", CFrame.new(0, -30, 540), markers)
 	marker("Travel_Ocean", CFrame.new(0, ground(0, 380) + 3, 380), markers)
 	spawnArea("Ocean", CFrame.new(0, 4, 380), Vector3.new(500, 6, 60))
+	-- striped cabanas along the sand
+	for _, spot in ipairs({ { -70, 372, 160 }, { -46, 386, 195 }, { 58, 378, 210 }, { 84, 366, 150 } }) do
+		place("Tent_Striped", spot[1], spot[2], spot[3], deco, 0.8)
+		reserve(spot[1], spot[2], 8)
+	end
+	scatter({ "Log_A", "Crate_B", "OilDrum", "Tire_Single" }, 10, 0, 400, 260, deco, 10, { 0.9, 1.3 }, { M.Sand })
 	-- beach dressing: rock groups, driftwood, reeds at the back of the sand
 	grove({ "Rock_Small_A", "Rock_Medium_B", "PondRim_Stone", "Log_A" }, 12, 4, 0, 380, 220, 18, deco, 4, { 0.9, 1.6 }, { M.Sand })
 	grove({ "Reeds", "GrassTuft_B", "Bush_C" }, 10, 5, 0, 350, 240, 14, deco, 2, nil, { M.Sand, M.Grass })

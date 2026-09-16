@@ -238,6 +238,9 @@ local function applyStyle(part: MeshPart, slot: string, variant: string, piece: 
 		if skinDef.darken then
 			color = color:Lerp(BLACK, skinDef.darken)
 		end
+		if skinDef.tint then
+			color = color:Lerp(TableUtil.unpackColor(skinDef.tint), skinDef.tintMix or 0.5)
+		end
 	end
 
 	part.Color = color

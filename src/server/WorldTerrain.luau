@@ -69,9 +69,9 @@ WorldTerrain.roads = {
 	{ name = "West", half = 6, pts = { { -60, 0 }, { -150, 0 }, { -230, -6 }, { -300, 5 }, { -390, 0 } } },
 	{ name = "North", half = 6, pts = { { 0, -60 }, { 0, -150 }, { 7, -225 }, { 0, -290 }, { 0, -345 } } },
 	{ name = "South", half = 6, pts = { { 0, 60 }, { 0, 150 }, { -7, 240 }, { 0, 330 }, { 0, 395 } } },
-	{ name = "MeadowPath", half = 3.5, pts = { { 440, 0 }, { 472, 58 }, { 500, 116 }, { 528, 146 } } },
-	{ name = "FarmLane", half = 3.5, pts = { { 104, 104 }, { 190, 190 }, { 262, 238 } } },
-	{ name = "OrchardLane", half = 3.5, pts = { { -104, -104 }, { -185, -190 }, { -262, -250 } } },
+	{ name = "MeadowPath", half = 5, pts = { { 440, 0 }, { 472, 58 }, { 500, 116 }, { 528, 146 } } },
+	{ name = "FarmLane", half = 5, pts = { { 104, 104 }, { 190, 190 }, { 262, 238 } } },
+	{ name = "OrchardLane", half = 5, pts = { { -104, -104 }, { -185, -190 }, { -262, -250 } } },
 }
 WorldTerrain.RING_R = 140
 WorldTerrain.PLOT_R = 205
@@ -92,8 +92,8 @@ WorldTerrain.zones = {
 
 -- junk heaps: { x, z, radius, height }
 WorldTerrain.heaps = {
-	{ -520, 70, 26, 11 }, { -560, -30, 22, 9 }, { -470, -120, 30, 12 }, { -380, 110, 18, 7 },
-	{ -600, 120, 24, 10 }, { -350, -80, 16, 6 }, { -500, 150, 20, 8 }, { -610, -110, 28, 13 },
+	{ -520, 70, 30, 20 }, { -560, -30, 26, 16 }, { -470, -120, 34, 22 }, { -380, 110, 22, 12 },
+	{ -600, 120, 28, 18 }, { -350, -80, 20, 11 }, { -500, 150, 24, 14 }, { -610, -110, 32, 24 },
 }
 
 local plotAngles = {}
@@ -285,8 +285,8 @@ function WorldTerrain.sample(x: number, z: number): (number, Enum.Material, numb
 		-- crop fields: dirt rows inside three fenced fields
 		local fx = (x - F.x0) % 64
 		local fz = (z - F.z0) % 50
-		if fx > 6 and fx < 56 and fz > 6 and fz < 44 then
-			mat = (math.floor((z - F.z0) / 5) % 2 == 0) and M.Ground or M.LeafyGrass
+		if fx > 8 and fx < 56 and fz > 8 and fz < 42 then
+			mat = M.Ground
 		end
 	end
 	-- sand: the southern beach, the rim of every coast, and anything low right by the sea
@@ -302,7 +302,7 @@ function WorldTerrain.sample(x: number, z: number): (number, Enum.Material, numb
 		mat = M.Mud
 	end
 	if plot then
-		mat = M.LeafyGrass
+		mat = M.Grass
 		if WorldTerrain.plotAt(x, z, 0) and math.abs(math.sqrt(x * x + z * z) - WorldTerrain.PLOT_R) > 33 then
 			mat = M.Ground -- the little path out to the ring road
 		end

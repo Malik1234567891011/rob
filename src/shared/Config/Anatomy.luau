@@ -162,7 +162,9 @@ Anatomy.skins = {
 	Polished  = { material = "Foil",          reflect = 0.35, transparency = 0 },
 	Faceted   = { material = "Glass",         reflect = 0.25, transparency = 0.12 },
 	Frosted   = { material = "Ice",           reflect = 0.1,  transparency = 0.05 },
-	Ember     = { material = "CrackedLava",   reflect = 0.0,  transparency = 0 },
+	-- CrackedLava draws its cracks in the part colour: a grey body reads as black marble,
+	-- so ember skin is pulled toward a hot orange (tint/tintMix, SPEC ART: skin is a surface)
+	Ember     = { material = "CrackedLava",   reflect = 0.0,  transparency = 0, tint = 0xFF6A2A, tintMix = 0.7 },
 	Charged   = { material = "SmoothPlastic", reflect = 0.15, transparency = 0, glow = 0.35 },
 	Gooey     = { material = "Glass",         reflect = 0.1,  transparency = 0.22 },
 	Spongy    = { material = "Fabric",        reflect = 0.0,  transparency = 0 },

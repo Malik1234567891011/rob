@@ -536,6 +536,7 @@ function UIController.build()
 	UIController.offlineReport = Overlays.offlineReport
 	UIController.notice = Overlays.notice
 	UIController.inspect = Overlays.inspect
+	ctx.photoMode = Overlays.photoMode
 
 	task.spawn(function()
 		while gui.Parent do

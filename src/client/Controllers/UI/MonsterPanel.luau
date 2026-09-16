@@ -11,6 +11,7 @@ local Progression = require(Shared.Config:WaitForChild("Progression"))
 local Anatomy = require(Shared.Config:WaitForChild("Anatomy"))
 local CreatureBuilder = require(Shared:WaitForChild("CreatureBuilder"))
 local TableUtil = require(Shared.Util:WaitForChild("TableUtil"))
+local Monetization = require(Shared.Config:WaitForChild("Monetization"))
 
 local MonsterPanel = {}
 MonsterPanel.title = "Monster"
@@ -205,6 +206,60 @@ function MonsterPanel.build(body: Frame, ctx)
 		if #elders > 0 then
 			local e = section("LIVING IN YOUR SANCTUARY", 50)
 			Theme.text({ text = table.concat(elders, "  ·  "), textSize = 14, parent = e, order = 1, auto = true })
+		end
+
+		-- ── style (Creature Stylist pass, trail products, Researcher photo mode) ──
+		local passes = profile.passes or {}
+		local cos = profile.cosmetics or {}
+		local styleSec = section("STYLE", 60)
+		local styleRow = Instance.new("Frame")
+		styleRow.BackgroundTransparency = 1
+		styleRow.Size = UDim2.new(1, 0, 0, 0)
+		styleRow.AutomaticSize = Enum.AutomaticSize.Y
+		styleRow.LayoutOrder = 1
+		styleRow.Parent = styleSec
+		Theme.grid(styleRow, Vector2.new(170, 52), 8)
+		local function setStyle(key: string, value: string)
+			local r = ctx.Net.func("SetStyle"):InvokeServer(key, value)
+			if r and not r.ok then
+				ctx.toast({ title = "NOT YET", label = tostring(r.reason), color = 0xEC6060 })
+			end
+		end
+		if passes.Stylist then
+			local labels = { nameFx = "✨ Name", eyeShine = "👀 Eyes", belly = "🎨 Belly" }
+			for i, key in ipairs({ "nameFx", "eyeShine", "belly" }) do
+				local options = Monetization.style[key]
+				local current = (cos.style and cos.style[key]) or options[1]
+				Theme.button({ label = labels[key] .. ": " .. current, size = UDim2.fromOffset(170, 52), textSize = 15, order = i,
+					color = current ~= options[1] and Theme.accent.shop or Theme.PAPER2, parent = styleRow, onClick = function()
+						local idx = (table.find(options, current) or 1) % #options + 1
+						setStyle(key, options[idx])
+					end })
+			end
+		else
+			Theme.button({ emoji = "🎨", label = "Creature Stylist", sub = "name effects · sparkly eyes", size = UDim2.fromOffset(170, 52), textSize = 14,
+				color = Theme.PAPER2, parent = styleRow, order = 1, onClick = function()
+					ctx.open("Shop")
+				end })
+		end
+		local trailN = 0
+		for _, key in ipairs(Monetization.productOrder) do
+			local def = Monetization.products[key]
+			if def.cosmetic and cos.owned and cos.owned[def.cosmetic] then
+				trailN += 1
+				local on = cos.equipped and cos.equipped.trail == def.cosmetic
+				Theme.button({ emoji = def.emoji, label = on and "Trail on" or def.display, size = UDim2.fromOffset(170, 52), textSize = 14, order = 10 + trailN,
+					color = on and Theme.accent.quest or Theme.PAPER2, parent = styleRow, onClick = function()
+						setStyle("trail", on and "None" or def.cosmetic)
+					end })
+			end
+		end
+		if passes.Researcher and ctx.photoMode then
+			Theme.button({ emoji = "📸", label = "Photo mode", size = UDim2.fromOffset(170, 52), textSize = 15, order = 30,
+				color = Theme.accent.book, parent = styleRow, onClick = function()
+					ctx.close()
+					ctx.photoMode()
+				end })
 		end
 
 		-- ── settings ─────────────────────────────────────────────────────────

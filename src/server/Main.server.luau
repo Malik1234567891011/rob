@@ -173,6 +173,33 @@ Net.func("MerchantBuy").OnServerInvoke = function(player, ingredientId)
 	return DailyService.buy(player, ingredientId)
 end
 
+-- Creature Stylist + trail cosmetics (SPEC §33: cosmetic, deterministic, never power)
+Net.func("SetStyle").OnServerInvoke = function(player, key, value)
+	local profile = PlayerDataService.get(player)
+	if not profile or type(key) ~= "string" or type(value) ~= "string" then
+		return { ok = false }
+	end
+	local Monetization = require(Shared.Config:WaitForChild("Monetization"))
+	if key == "trail" then
+		if value ~= "None" and not profile.cosmetics.owned[value] then
+			return { ok = false, reason = "not owned" }
+		end
+		profile.cosmetics.equipped.trail = value ~= "None" and value or nil
+	else
+		local options = Monetization.style[key]
+		if not options or not table.find(options, value) then
+			return { ok = false, reason = "bad option" }
+		end
+		if not MonetizationService.hasPass(player, "Stylist") then
+			return { ok = false, reason = "part of Creature Stylist" }
+		end
+		profile.cosmetics.style[key] = value
+	end
+	CreatureService.refresh(player)
+	PlayerDataService.sync(player)
+	return { ok = true }
+end
+
 Net.func("SetSetting").OnServerInvoke = function(player, key, value)
 	local profile = PlayerDataService.get(player)
 	if not profile or type(key) ~= "string" or (key ~= "music" and key ~= "sfx") then

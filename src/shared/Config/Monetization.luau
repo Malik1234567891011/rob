@@ -30,7 +30,7 @@ Monetization.passes = {
 	},
 	Stylist = {
 		id = 0, price = 99, display = "Creature Stylist", emoji = "🎨",
-		blurb = "Purely cosmetic: eye colours, name effects, harmless markings.",
+		blurb = "Purely cosmetic: name effects, sparkly eyes, belly patch colours.",
 	},
 	Researcher = {
 		id = 0, price = 399, display = "VIP Researcher", emoji = "🔬",
@@ -38,6 +38,23 @@ Monetization.passes = {
 	},
 }
 Monetization.passOrder = { "ExtraSlots", "BigBackpack", "SanctuaryPlus", "Stylist", "Researcher" }
+
+-- Creature Stylist options. Cosmetic only: none of these change traits, stats or odds.
+Monetization.style = {
+	nameFx = { "None", "Gold", "Rainbow", "Frost", "Candy" },
+	eyeShine = { "None", "Pink", "Cyan", "Gold", "Lime" },
+	belly = { "Default", "Cream", "Mint", "Peach", "Lilac", "Sky" },
+}
+Monetization.styleColors = {
+	Pink = 0xFF7FC8, Cyan = 0x6FE8FF, Gold = 0xFFD54A, Lime = 0xB8FF6A,
+	Cream = 0xFFF1D6, Mint = 0xC9F5DC, Peach = 0xFFD2B8, Lilac = 0xE3D2FF, Sky = 0xCFE8FF,
+}
+Monetization.nameFxGradients = {
+	Gold = { 0xFFF3A8, 0xFFB627, 0xFFF3A8 },
+	Rainbow = { 0xFF6B6B, 0xFFD93B, 0x5FE08A, 0x5CC8FF, 0xC77DFF },
+	Frost = { 0xFFFFFF, 0x9FE6FF, 0xFFFFFF },
+	Candy = { 0xFF9ED2, 0xFFFFFF, 0xFF9ED2 },
+}
 
 -- Developer products: deterministic, never random (SPEC §27, §33).
 Monetization.products = {

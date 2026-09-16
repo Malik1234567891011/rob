@@ -70,6 +70,40 @@ end
 
 -- ═══ NAMEPLATE (SPEC §24) ════════════════════════════════════════════════════
 
+-- cosmetics chosen with the Creature Stylist / bought trails / the Researcher badge.
+-- Cosmetic only (SPEC §33): nothing here touches traits, abilities or odds.
+local function cosmetics(player: Player)
+	local profile = PlayerDataService.get(player)
+	local c = profile and profile.cosmetics or {}
+	local okM, Mon = pcall(require, script.Parent.MonetizationService)
+	local stylist = okM and Mon.hasPass(player, "Stylist") or false
+	local researcher = okM and Mon.hasPass(player, "Researcher") or false
+	return (c.style or {}), (c.equipped or {}), stylist, researcher
+end
+
+local function applyStyle(model: Model, player: Player)
+	local Monetization = require(Shared.Config:WaitForChild("Monetization"))
+	local style, equipped, stylist, researcher = cosmetics(player)
+	model:SetAttribute("Trail", equipped.trail)
+	model:SetAttribute("Researcher", researcher or nil)
+	if not stylist then
+		return
+	end
+	model:SetAttribute("NameFx", style.nameFx ~= "None" and style.nameFx or nil)
+	local shine = style.eyeShine and Monetization.styleColors[style.eyeShine]
+	local belly = style.belly and Monetization.styleColors[style.belly]
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("MeshPart") then
+			if shine and string.find(d.Name, "__Shine", 1, true) then
+				d.Color = TableUtil.unpackColor(shine)
+				d.Material = Enum.Material.Neon
+			elseif belly and string.find(d.Name, "__Belly", 1, true) then
+				d.Color = TableUtil.unpackColor(belly)
+			end
+		end
+	end
+end
+
 local function nameplate(model: Model, genome)
 	local root = model.PrimaryPart
 	if not root then
@@ -95,6 +129,20 @@ local function nameplate(model: Model, genome)
 	label.TextStrokeTransparency = 0.45
 	label.Text = genome.name or ""
 	label.Parent = gui
+	local fx = model:GetAttribute("NameFx")
+	local Monetization = require(Shared.Config:WaitForChild("Monetization"))
+	local stops = type(fx) == "string" and Monetization.nameFxGradients[fx]
+	if stops then
+		local keys = {}
+		for i, hex in ipairs(stops) do
+			table.insert(keys, ColorSequenceKeypoint.new((i - 1) / (#stops - 1), TableUtil.unpackColor(hex)))
+		end
+		local g = Instance.new("UIGradient")
+		g.Name = "NameFx"
+		g.Color = ColorSequence.new(keys)
+		g.Parent = label
+		label.TextStrokeTransparency = 0.2
+	end
 
 	local sub = Instance.new("TextLabel")
 	sub.Name = "Sub"
@@ -107,7 +155,7 @@ local function nameplate(model: Model, genome)
 	sub.TextStrokeTransparency = 0.6
 	local dom = CreatureBuilder.dominantTrait(genome)
 	local stage = Progression.stage(genome.stage or 1)
-	sub.Text = string.format("%s Gen %d  %s", stage.emoji, genome.generation or 1, dom and Traits.display(dom) or "")
+	sub.Text = string.format("%s%s Gen %d  %s", model:GetAttribute("Researcher") and "🔬 " or "", stage.emoji, genome.generation or 1, dom and Traits.display(dom) or "")
 	sub.Parent = gui
 end
 
@@ -245,6 +293,7 @@ function CreatureService.refresh(player: Player, reveal: any?)
 	model.Parent = ensureContainer()
 	CollectionService:AddTag(model, CreatureService.TAG)
 
+	applyStyle(model, player)
 	nameplate(model, genome)
 	petPrompt(model, player)
 	CreatureService.stampAbilities(player)

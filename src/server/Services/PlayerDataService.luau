@@ -82,7 +82,7 @@ local function defaultProfile()
 		daily = { day = 0, streak = 0 },
 		trials = { best = {}, played = 0, wins = 0 },
 		parade = { entered = 0, votes = {} },
-		cosmetics = { owned = {}, equipped = {} },
+		cosmetics = { owned = {}, equipped = {}, style = {} },
 		passes = {},
 		settings = { music = true, sfx = true },
 		stats = { feeds = 0, sessions = 0, gatesOpened = 0, trials = 0, pets = 0, evolutions = 0, eventsJoined = 0 },
@@ -113,6 +113,8 @@ local function reconcile(loaded)
 	if type(profile.gatesOpened) ~= "table" then
 		profile.gatesOpened = {}
 	end
+	profile.cosmetics.style = profile.cosmetics.style or {}
+	profile.cosmetics.equipped = profile.cosmetics.equipped or {}
 	for _, c in ipairs(profile.creatures) do
 		c.abilities = c.abilities or {}
 		c.mutations = c.mutations or {}

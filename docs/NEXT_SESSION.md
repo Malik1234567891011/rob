@@ -9,9 +9,18 @@ Malik explicitly rejected both the MVP scope and `generate_mesh`. Blender is the
   - Kits: meadow, junk/caves, hub, plus 80 props (all 75 ingredients, eggs, shells).
   - `kit_events` (UFO, picnic, meteor, rock seal) is being built.
   - All art lives in `ReplicatedStorage.Assets` in the open Studio place.
-- **World.** `src/server/WorldBuilder.luau` builds everything in edit mode. Run it with the shim: `WB.clear() … WB.all()`.
-  - The build is deterministic.
-  - The world must be REBUILT after WorldBuilder changes. It is saved in the place, not in git.
+- **World.** `src/server/WorldTerrain.luau` is the island as one height function, written to voxels in bands. `src/server/WorldBuilder.luau` dresses it.
+  - Run with the shim, as two calls:
+    1. `WB.clear(); WB.terrain()`
+    2. `WB.clearProps()` then hub, plots, meadow, countryside, junkyard, caves, ocean, strange, trials, spawn
+  - They must be separate calls: freshly written voxels are not raycastable until the engine steps.
+  - `WB.rejects` explains empty scatter areas.
+  - The build is deterministic. The world is saved in the place, not in git, so REBUILD it after changes.
+  - **Offline review:**
+    1. `tools/studio/export_world.luau`
+    2. Fetch the chunks (see the file header).
+    3. `tools/join_export.py`
+    4. `tools/blender/world_preview.py` renders to `art/previews/world/_sheet.jpg`.
 - **Systems.** Every launch system is in and asserted by the test suites below. Update 1 (Ocean) ships dark.
   - Switch it on with `Config/Release.updateLevel`, or schedule it with `Config/Release.unlockAt[1]` (live flip, no restart).
 - **Tests** (`tests/`, all disabled Scripts; enable ONE, then Play):
@@ -19,7 +28,7 @@ Malik explicitly rejected both the MVP scope and `generate_mesh`. Blender is the
   | Suite | What it covers | Result |
   |---|---|---|
   | DevIntegration | core loop | 32/32 |
-  | DevSystems | quests, merchant, gates, sanctuary, eggs, monetization guard, parade, events, trials | 43/43 |
+  | DevSystems | quests, merchant, gates, sanctuary, eggs, monetization guard, passes/cosmetics, parade, events, trials | 51/51 |
   | DevTrials | all 4 trials end to end | 22/22 |
   | DevEvents | all 8 world events | 51/51 |
   | DevUpdate1 | the Ocean opens live | 11/11 |

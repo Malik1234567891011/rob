@@ -120,7 +120,8 @@ local function run(player: Player)
 	PlayerDataService.give(player, "Honeycomb", 1)
 	FeedingService.feed(player, "Honeycomb")
 	task.wait(0.3)
-	check("new food completes TrySomethingNew", profile.quests.completedTotal == doneBefore + 1, profile.quests.completedTotal - doneBefore)
+	-- other random active quests may complete from the same meals, so "at least one"
+	check("new food completes TrySomethingNew", profile.quests.completedTotal >= doneBefore + 1, profile.quests.completedTotal - doneBefore)
 	check("quest slots refilled", #profile.quests.active == Quests.ACTIVE, #profile.quests.active)
 
 	-- ── DAILY + MERCHANT ───────────────────────────────────────────────────────
@@ -225,6 +226,42 @@ local function run(player: Player)
 	profile.stats.evolutions = math.max(1, evolutions)
 	local later = MonetizationService.prompt(player, "pass", "ExtraSlots")
 	check("after evolution: ids pending = coming soon", later.ok == true or later.reason == "coming soon", later.reason)
+
+	-- ── PASSES DO WHAT THEY SAY (cosmetic / QoL only) ─────────────────────────
+	section("passes")
+	profile.coins += 20000
+	profile.essence += 20
+	local lockedDecor = SanctuaryService.buyDecor(player, "Lamp_Post")
+	check("Builder+ decor refused without pass", lockedDecor.ok == false, lockedDecor.reason)
+	profile.passes.SanctuaryPlus = true
+	local plusDecor = SanctuaryService.buyDecor(player, "Lamp_Post")
+	check("Builder+ decor with pass", plusDecor.ok == true, plusDecor.reason)
+	profile.passes.Stylist = true
+	profile.passes.Researcher = true
+	profile.cosmetics.style = { nameFx = "Gold", eyeShine = "Pink", belly = "Mint" }
+	profile.cosmetics.owned.TrailStars = true
+	profile.cosmetics.equipped.trail = "TrailStars"
+	local styled = CreatureService.refresh(player)
+	check("stylist name effect", styled and styled:GetAttribute("NameFx") == "Gold")
+	local shineNeon, gradient, badge = false, false, false
+	for _, d in ipairs(styled and styled:GetDescendants() or {}) do
+		if d:IsA("MeshPart") and string.find(d.Name, "__Shine", 1, true) and d.Material == Enum.Material.Neon then
+			shineNeon = true
+		elseif d:IsA("UIGradient") and d.Name == "NameFx" then
+			gradient = true
+		elseif d:IsA("TextLabel") and d.Name == "Sub" and string.find(d.Text, "🔬", 1, true) then
+			badge = true
+		end
+	end
+	check("stylist sparkly eyes", shineNeon)
+	check("name gradient on nameplate", gradient)
+	check("researcher nameplate badge", badge)
+	check("trail cosmetic stamped", styled and styled:GetAttribute("Trail") == "TrailStars")
+	profile.passes.Stylist, profile.passes.Researcher, profile.passes.SanctuaryPlus = nil, nil, nil
+	profile.cosmetics.style = {}
+	profile.cosmetics.equipped.trail = nil
+	CreatureService.refresh(player)
+	genome = PlayerDataService.activeCreature(player)
 
 	-- ── PARADE ─────────────────────────────────────────────────────────────────
 	section("parade")

@@ -54,6 +54,7 @@ Net.FUNCTIONS = {
 	"NewEgg",
 	"SetSetting",
 	"Travel",
+	"SetStyle",
 }
 
 local folderName = "Net"

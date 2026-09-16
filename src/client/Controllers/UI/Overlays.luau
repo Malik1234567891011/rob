@@ -23,6 +23,8 @@ local player = Players.LocalPlayer
 
 -- ═══ CAPTURE / SHARE (SPEC §39) ══════════════════════════════════════════════
 
+local orbitFn: any -- set to orbit() once it is defined below; photo mode uses it
+
 local function shareMoment(kind: string)
 	local ok, CaptureService = pcall(game.GetService, game, "CaptureService")
 	if not ok or not CaptureService then
@@ -37,6 +39,25 @@ local function shareMoment(kind: string)
 				end, function() end)
 			end)
 		end)
+	end)
+end
+
+-- VIP Researcher photo mode: hide the HUD, orbit your monster, capture + share
+function Overlays.photoMode()
+	local ok, CC = pcall(function()
+		return require(script.Parent.Parent:WaitForChild("CreatureController"))
+	end)
+	local model = ok and CC.myCreature() or nil
+	if not model then
+		return
+	end
+	ctx.gui.Enabled = false
+	task.spawn(function()
+		orbitFn(model, 5)
+		task.wait(2.2)
+		shareMoment("photo")
+		task.wait(2.8)
+		ctx.gui.Enabled = true
 	end)
 end
 
@@ -88,6 +109,8 @@ local function flash(color: Color3?)
 end
 
 -- ═══ EVOLUTION (SPEC §9) ═════════════════════════════════════════════════════
+
+orbitFn = orbit
 
 function Overlays.evolution(payload)
 	local CC = ctx.creature()

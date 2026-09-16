@@ -40,6 +40,46 @@ local function ownerHead(model: Model): Vector3?
 	return head and head.Position or nil
 end
 
+-- ═══ COSMETIC TRAILS (Monetization products) ═══════════════════════════════════
+-- Emit only while the monster is moving: "leaves little stars when it walks".
+local TRAILS = {
+	TrailStars = { texture = "rbxasset://textures/particles/sparkles_main.dds", color = { Color3.fromRGB(255, 236, 140), Color3.fromRGB(255, 255, 255) }, size = 0.55, speed = 1.5, life = 1.2, rot = true, light = 0.6 },
+	TrailBubbles = { texture = "rbxasset://textures/particles/sparkles_main.dds", color = { Color3.fromRGB(170, 230, 255), Color3.fromRGB(230, 250, 255) }, size = 0.8, speed = 2.5, life = 1.6, rot = false, light = 0.2, rise = 3 },
+	TrailLeaves = { texture = "rbxasset://textures/particles/smoke_main.dds", color = { Color3.fromRGB(120, 200, 90), Color3.fromRGB(190, 220, 90) }, size = 0.45, speed = 2, life = 1.8, rot = true, light = 0, rise = -1.5 },
+}
+
+local function setupTrail(model: Model, rig)
+	local root = model.PrimaryPart
+	if not root then
+		return
+	end
+	local old = root:FindFirstChild("CosmeticTrail")
+	if old then
+		old:Destroy()
+	end
+	rig.trail = nil
+	local def = TRAILS[model:GetAttribute("Trail") or ""]
+	if not def then
+		return
+	end
+	local e = Instance.new("ParticleEmitter")
+	e.Name = "CosmeticTrail"
+	e.Texture = def.texture
+	e.Color = ColorSequence.new(def.color[1], def.color[2])
+	e.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, def.size), NumberSequenceKeypoint.new(1, 0) })
+	e.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.1), NumberSequenceKeypoint.new(1, 1) })
+	e.Lifetime = NumberRange.new(def.life * 0.7, def.life)
+	e.Speed = NumberRange.new(def.speed * 0.5, def.speed)
+	e.SpreadAngle = Vector2.new(180, 180)
+	e.Acceleration = Vector3.new(0, def.rise or 0, 0)
+	e.LightEmission = def.light
+	e.Rotation = NumberRange.new(0, 360)
+	e.RotSpeed = def.rot and NumberRange.new(-90, 90) or NumberRange.new(0, 0)
+	e.Rate = 0
+	e.Parent = root
+	rig.trail = e
+end
+
 local function attach(model: Model)
 	if rigs[model] then
 		return
@@ -66,6 +106,10 @@ local function attach(model: Model)
 		end
 		rig.frame = 0
 		rigs[model] = rig
+		setupTrail(model, rig)
+		model:GetAttributeChangedSignal("Trail"):Connect(function()
+			setupTrail(model, rig)
+		end)
 		local id = model:GetAttribute("CreatureId")
 		if id then
 			byId[id] = model
@@ -157,6 +201,20 @@ local function update(dt: number)
 		end
 		rig.frame += 1
 		local lite = dist > FULL_RANGE
+		if rig.trail then
+			local last = rig.lastRootPos or root.Position
+			local speed = (root.Position - last).Magnitude / math.max(dt, 1 / 240)
+			rig.lastRootPos = root.Position
+			rig.trail.Rate = (not lite and speed > 2) and 14 or 0
+		end
+		if rig.frame % 3 == 0 then
+			local plate = root:FindFirstChild("Nameplate")
+			local label = plate and plate:FindFirstChildOfClass("TextLabel")
+			local g = label and label:FindFirstChild("NameFx") :: UIGradient?
+			if g then
+				g.Offset = Vector2.new(math.sin(os.clock() * 0.8) * 0.5, 0)
+			end
+		end
 		if lite and rig.frame % 4 ~= 0 then
 			continue
 		end

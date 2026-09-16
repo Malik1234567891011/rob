@@ -31,8 +31,8 @@ function BookPanel.build(body: Frame, ctx)
 	local refresh
 
 	local tabButtons = {}
-	for i, name in ipairs({ "Foods", "Traits", "Mutations", "Combos" }) do
-		tabButtons[name] = Theme.button({ label = name, size = UDim2.fromOffset(120, 44), textSize = 17, order = i, parent = tabs,
+	for i, name in ipairs({ "Foods", "Traits", "Mutations", "Combos", "Journal" }) do
+		tabButtons[name] = Theme.button({ label = name == "Journal" and "🔬 Journal" or name, size = UDim2.fromOffset(name == "Journal" and 132 or 110, 44), textSize = 17, order = i, parent = tabs,
 			color = Theme.PAPER2, onClick = function()
 				tab = name
 				refresh()
@@ -55,7 +55,10 @@ function BookPanel.build(body: Frame, ctx)
 	end
 
 	refresh = function()
-		Theme.clear(scroll)
+		-- this panel swaps between grid and list layouts, so layouts and padding go too
+		for _, c in ipairs(scroll:GetChildren()) do
+			c:Destroy()
+		end
 		for name, b in pairs(tabButtons) do
 			Theme.setButton(b, nil, name == tab and Theme.accent.book or Theme.PAPER2)
 		end
@@ -64,6 +67,58 @@ function BookPanel.build(body: Frame, ctx)
 			return
 		end
 		local d = profile.discovered
+		if tab == "Journal" then
+			-- VIP Researcher: the numbers behind your discoveries. Information, never power.
+			Theme.list(scroll, Enum.FillDirection.Vertical, 6)
+			Theme.pad(scroll, 8, 8)
+			if not (profile.passes and profile.passes.Researcher) then
+				Theme.text({ text = "🔬 The Research Journal is part of the <b>VIP Researcher</b> pass: detailed stats, a researcher nameplate and photo mode. It never changes what your monster can do.",
+					textSize = 16, color = Theme.MUTED, parent = scroll, auto = true }).Size = UDim2.new(1, -8, 0, 70)
+				Theme.button({ emoji = "🛍️", label = "See the shop", size = UDim2.fromOffset(200, 50), textSize = 16, color = Theme.accent.shop, parent = scroll, order = 2,
+					onClick = function()
+						ctx.open("Shop")
+					end })
+				counter.Text = "Research Journal"
+				return
+			end
+			local function count(t)
+				local n = 0
+				for _, v in pairs(t or {}) do
+					if v then
+						n += 1
+					end
+				end
+				return n
+			end
+			local st = profile.stats or {}
+			local secrets = 0
+			for id in pairs(d.mutations or {}) do
+				local def = Mutations.get(id)
+				if def and def.secret then
+					secrets += 1
+				end
+			end
+			local lines = {
+				string.format("🍽️ Meals served: <b>%s</b>", Theme.fmt(st.feeds or 0)),
+				string.format("🥕 Different foods tried: <b>%d</b> of %d", count(d.ingredients), #Ingredients.order),
+				string.format("🧬 Traits discovered: <b>%d</b> of %d", count(d.traits), #Traits.order),
+				string.format("✨ Mutations found: <b>%d</b> of %d  (secrets: <b>%d</b>)", count(d.mutations), #Mutations.order, secrets),
+				string.format("🌟 Evolutions: <b>%d</b>", st.evolutions or 0),
+				string.format("🚪 Gates opened: <b>%d</b>", st.gatesOpened or 0),
+				string.format("🏁 Trials played: <b>%d</b>", st.trials or 0),
+				string.format("🎉 World events joined: <b>%d</b>", st.eventsJoined or 0),
+				string.format("🤗 Pets given: <b>%d</b>", st.pets or 0),
+				string.format("📅 Visits: <b>%d</b>", st.sessions or 0),
+			}
+			for id, best in pairs(profile.trials and profile.trials.best or {}) do
+				table.insert(lines, string.format("🏆 Best %s: <b>%s</b>", id, tostring(best)))
+			end
+			for i, line in ipairs(lines) do
+				Theme.text({ text = line, textSize = 17, parent = scroll, order = i, auto = true }).Size = UDim2.new(1, -8, 0, 26)
+			end
+			counter.Text = "🔬 Research Journal"
+			return
+		end
 		local grid = Theme.grid(scroll, Vector2.new(tab == "Foods" and 104 or 150, tab == "Foods" and 92 or 120), 8)
 		local _ = grid
 		Theme.pad(scroll, 4, 6)

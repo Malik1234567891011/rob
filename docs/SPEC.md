@@ -840,3 +840,23 @@ That is the business.
 ## Amendments
 
 *(append dated amendments below — never edit the sections above)*
+
+### 2026-09-16 — Build amendments
+
+Recorded during the first implementation pass. These are refinements the spec did not
+specify, made while building, all traceable to a spec principle:
+
+1. **`Progression.MAX_SCALE` per stage.** Mutation `sizeMul` stacks multiplicatively and
+   reached 8.7× base, which is not "spectacular", it is broken. Capped so Mythic lands near
+   the 15-foot creature the thumbnail promises.
+2. **Follow distance scales with body size.** A Baby at a fixed 7 studs reads as a dot on
+   the horizon. The creature is the product (§44 "the creature is the UI"), so it anchors
+   *in front of* the owner at a distance proportional to its own torso.
+3. **`Traits.VISIBLE_AT = 3` and `Sprout` at `Nature >= 3`.** One apple is Nature+3, so the
+   first feed always produces a visible body change. Non-negotiable §99 #2 is encoded as
+   data, not as a special case in code.
+4. **Name filtering fails CLOSED.** If `TextService` moderation is unavailable (as in an
+   unpublished Studio place), the creature is named "Monster" rather than accepting an
+   unfiltered player string. This is a children's product.
+5. **The aspiration creature (§8, 0:50) is an NPC.** On an empty server there is no
+   "massive player monster" to walk past, so one is staged. No popup, no text.

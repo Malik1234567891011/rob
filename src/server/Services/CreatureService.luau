@@ -132,6 +132,8 @@ function CreatureService.refresh(player: Player, dramatic: boolean?)
 		popUntil = dramatic and (os.clock() + 0.5) or 0,
 		mood = "follow",
 		moodUntil = 0,
+		-- stable per-creature lateral offset so two creatures never stack up
+		sideOffset = (player.UserId % 2 == 0) and 2.2 or -2.2,
 	}
 	return model
 end
@@ -181,23 +183,43 @@ local function step(dt: number)
 		local target = pos
 
 		if hrp then
-			local toOwner = hrp.Position - pos
-			local flat = Vector3.new(toOwner.X, 0, toOwner.Z)
-			local dist = flat.Magnitude
+			-- The whole game is watching your creature change, so it must stay ON
+			-- SCREEN. Roblox's default camera sits behind the character, so we anchor
+			-- the creature IN FRONT of the owner rather than merely "within N studs"
+			-- (which let it trail behind the player, permanently out of view).
+			local look = hrp.CFrame.LookVector
+			local right = hrp.CFrame.RightVector
+			local flatLook = Vector3.new(look.X, 0, look.Z)
+			if flatLook.Magnitude < 0.01 then
+				flatLook = Vector3.new(0, 0, -1)
+			end
+			flatLook = flatLook.Unit
 
-			if state.temperament == "nervous" and dist < profile.dist then
-				-- hides BEHIND the owner rather than in front of them
-				local behind = hrp.CFrame.LookVector * -3
-				target = hrp.Position + Vector3.new(behind.X, 0, behind.Z)
-			elseif dist > profile.dist then
-				local move = flat.Unit * math.min(profile.speed * dt, dist - profile.dist * 0.8)
-				target = pos + move
+			-- Follow distance scales with body size. A fixed 7 studs puts a Baby
+			-- (torso ~1.4 deep) on the horizon as an unreadable dot, while a Mythic
+			-- at 7 studs fills the whole screen.
+			local reach = math.clamp(2.2 + torso.Size.Z * 1.2, 3.5, 13)
+				* (profile.dist / 7.0)
+
+			local anchor
+			if state.temperament == "nervous" then
+				-- the exception: a nervous creature hides behind its owner
+				anchor = hrp.Position - flatLook * math.max(3.0, reach * 0.5)
+			else
+				anchor = hrp.Position
+					+ flatLook * reach
+					+ Vector3.new(right.X, 0, right.Z).Unit * state.sideOffset
+			end
+			anchor = Vector3.new(anchor.X, pos.Y, anchor.Z)
+
+			local toAnchor = anchor - pos
+			local gap = toAnchor.Magnitude
+			if gap > 1.2 then
+				target = pos + toAnchor.Unit * math.min(profile.speed * dt, gap)
 			elseif state.temperament == "mischievous" then
-				-- circles the owner instead of standing still
-				local side = Vector3.new(-flat.Z, 0, flat.X)
-				if side.Magnitude > 0.01 then
-					target = pos + side.Unit * (profile.speed * 0.45 * dt)
-				end
+				-- circles its anchor instead of standing perfectly still
+				local side = Vector3.new(-flatLook.Z, 0, flatLook.X)
+				target = pos + side * (profile.speed * 0.3 * dt)
 			end
 		end
 
@@ -221,7 +243,8 @@ local function step(dt: number)
 
 		local look = torso.CFrame.LookVector
 		if hrp then
-			-- it looks at its owner. SPEC §42 lists this first in the animation budget.
+			-- it looks at its owner. SPEC §42 lists this first in the animation budget,
+			-- and since the creature now stands in front, this turns it to face camera.
 			local toOwner = hrp.Position - Vector3.new(target.X, hrp.Position.Y, target.Z)
 			if toOwner.Magnitude > 0.5 then
 				look = toOwner.Unit

@@ -289,9 +289,12 @@ local function spawnAspirationCreature(parent: Folder)
 			local z = -74 + math.cos(t * 0.18) * 14
 			local nextX = 64 + math.sin((t + 0.05) * 0.18) * 46
 			local nextZ = -74 + math.cos((t + 0.05) * 0.18) * 14
+			-- Both points MUST share a Y. Feeding lookAt a target at a different
+			-- height pitches the whole creature over onto its face.
+			local bobY = groundOffset + math.abs(math.sin(t * 2)) * 0.5
 			torso.CFrame = CFrame.lookAt(
-				Vector3.new(x, groundOffset + math.abs(math.sin(t * 2)) * 0.5, z),
-				Vector3.new(nextX, groundOffset, nextZ))
+				Vector3.new(x, bobY, z),
+				Vector3.new(nextX, bobY, nextZ))
 			task.wait(0.03)
 		end
 	end)

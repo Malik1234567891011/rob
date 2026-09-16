@@ -213,7 +213,128 @@ class Cute(Family):
         return sdf.ellipsoid((0, -0.55, 0.9), (0.62, 0.55, 0.62))
 
 
-FAMILIES = {"Cute": Cute()}
+class Heavy(Family):
+    """Wide, low, chunky quadruped — bulldog / baby rhino / hippo. A barrel torso with the
+    head slung low and forward, small eyes in a big face, pillar legs. Brave and lazy."""
+
+    name = "Heavy"
+    ps = 1.25
+    eye_r = 0.25
+    leg_r = 0.34
+    neck_blend = 0.5
+
+    def head_params(self, head):
+        if head == "Blocky":
+            return V(0, -1.32, 1.28), (1.02, 0.86, 0.8)
+        if head == "Snouted":
+            return V(0, -1.3, 1.3), (0.98, 0.84, 0.8)
+        if head == "Bulb":
+            return V(0, -1.3, 1.3), (0.98, 0.84, 0.82)
+        return V(0, -1.35, 1.28), (1.02, 0.86, 0.82)
+
+    def torso_shape(self):
+        barrel = sdf.ellipsoid((0, 0.3, 1.12), (1.22, 1.3, 0.92))
+        shoulders = sdf.ellipsoid((0, -0.4, 1.32), (1.12, 0.78, 0.86))
+        rump = sdf.ellipsoid((0, 1.02, 1.08), (1.0, 0.66, 0.8))
+        belly = sdf.ellipsoid((0, 0.2, 0.78), (1.02, 1.1, 0.55))
+        return sdf.smooth_union(barrel, shoulders, rump, belly, k=0.4)
+
+    def base_sockets(self, head):
+        hc, hr = self.head_params(head)
+        face_y = hc.y - hr[1]
+        eye_z = hc.z + 0.24
+        top = hc.z + hr[2] + (0.42 if head == "Bulb" else 0.0)
+        snout = head == "Snouted"
+        jaw = V(0, face_y + 0.52 - (0.4 if snout else 0), hc.z - (0.36 if snout else 0.3))
+        return dict(
+            root=V(0, 0.3, 0.8), belly=V(0, 0.2, 0.75), spine=V(0, 0.3, 1.2), neck=V(0, -0.8, 1.32),
+            head=V(0, hc.y + 0.25, hc.z - 0.2),
+            jaw=jaw, tongue=jaw + V(0, -0.12, -0.03),
+            slit=V(0, jaw.y - 0.46, jaw.z + 0.02),
+            eyeL=V(0.52, face_y + 0.24 + (0.05 if snout else 0), eye_z),
+            eyeR=V(-0.52, face_y + 0.24 + (0.05 if snout else 0), eye_z),
+            cheekL=V(0.66, face_y + 0.45, hc.z - 0.26), cheekR=V(-0.66, face_y + 0.45, hc.z - 0.26),
+            earL=V(0.74, hc.y + 0.12, top - 0.18), earR=V(-0.74, hc.y + 0.12, top - 0.18),
+            hornC=V(0, hc.y - 0.28, top - 0.05), hornL=V(0.44, hc.y - 0.32, top - 0.12), hornR=V(-0.44, hc.y - 0.32, top - 0.12),
+            back=V(0, 0.3, 1.98), wingL=V(0.6, 0.4, 1.86), wingR=V(-0.6, 0.4, 1.86),
+            tail=[V(0, 1.6, 1.12), V(0, 1.92, 1.2), V(0, 2.22, 1.32), V(0, 2.5, 1.5), V(0, 2.74, 1.74)],
+            legs={
+                "FL": (V(0.74, -0.58, 0.82), V(0.77, -0.62, 0.42), V(0.78, -0.66, 0.0)),
+                "FR": (V(-0.74, -0.58, 0.82), V(-0.77, -0.62, 0.42), V(-0.78, -0.66, 0.0)),
+                "BL": (V(0.76, 1.02, 0.82), V(0.79, 1.06, 0.42), V(0.8, 1.1, 0.0)),
+                "BR": (V(-0.76, 1.02, 0.82), V(-0.79, 1.06, 0.42), V(-0.8, 1.1, 0.0)),
+            },
+            face_y=face_y, head_c=hc, head_r=hr, top=top,
+            back_surface=[V(0, -0.6, 2.12), V(0, 0.1, 2.06), V(0, 0.8, 1.96), V(0, 1.36, 1.72)],
+            belly_front=V(0, -1.0, 0.72),
+        )
+
+    def belly_region(self, head):
+        return sdf.ellipsoid((0, -0.2, 0.62), (0.95, 1.35, 0.5))
+
+
+class Weird(Family):
+    """Tall upright alien biped: a bean body, a long neck, the head on top, little arms.
+    Mischievous and nervous. The silhouette is nothing like the other two, on purpose."""
+
+    name = "Weird"
+    ps = 0.95
+    eye_r = 0.3
+    leg_r = 0.2
+    neck_blend = 0.28
+    arms = ("FL", "FR")
+
+    def head_params(self, head):
+        if head == "Blocky":
+            return V(0, -0.42, 3.64), (0.84, 0.74, 0.7)
+        if head == "Snouted":
+            return V(0, -0.36, 3.66), (0.8, 0.72, 0.7)
+        if head == "Bulb":
+            return V(0, -0.38, 3.62), (0.8, 0.72, 0.7)
+        return V(0, -0.42, 3.64), (0.86, 0.76, 0.72)
+
+    def torso_shape(self):
+        bean = sdf.ellipsoid((0, 0.12, 1.5), (0.7, 0.6, 1.02))
+        hips = sdf.ellipsoid((0, 0.18, 1.02), (0.68, 0.58, 0.52))
+        neck = sdf.round_cone((0, 0.02, 2.2), (0, -0.32, 3.3), 0.3, 0.17)
+        return sdf.smooth_union(sdf.smooth_union(bean, hips, k=0.3), neck, k=0.3)
+
+    def base_sockets(self, head):
+        hc, hr = self.head_params(head)
+        face_y = hc.y - hr[1]
+        eye_z = hc.z + 0.12
+        top = hc.z + hr[2] + (0.38 if head == "Bulb" else 0.0)
+        snout = head == "Snouted"
+        jaw = V(0, face_y + 0.4 - (0.32 if snout else 0), hc.z - (0.36 if snout else 0.32))
+        return dict(
+            root=V(0, 0.15, 0.9), belly=V(0, -0.2, 1.3), spine=V(0, 0.12, 1.45), neck=V(0, -0.08, 2.5),
+            head=V(0, hc.y + 0.08, hc.z - 0.3),
+            jaw=jaw, tongue=jaw + V(0, -0.1, -0.03),
+            slit=V(0, jaw.y - 0.38, jaw.z + 0.02),
+            eyeL=V(0.38, face_y + 0.2 + (0.05 if snout else 0), eye_z),
+            eyeR=V(-0.38, face_y + 0.2 + (0.05 if snout else 0), eye_z),
+            cheekL=V(0.48, face_y + 0.34, hc.z - 0.28), cheekR=V(-0.48, face_y + 0.34, hc.z - 0.28),
+            earL=V(0.52, hc.y + 0.04, top - 0.2), earR=V(-0.52, hc.y + 0.04, top - 0.2),
+            hornC=V(0, hc.y - 0.18, top - 0.05), hornL=V(0.3, hc.y - 0.22, top - 0.1), hornR=V(-0.3, hc.y - 0.22, top - 0.1),
+            back=V(0, 0.66, 2.02), wingL=V(0.4, 0.66, 2.2), wingR=V(-0.4, 0.66, 2.2),
+            tail=[V(0, 0.66, 1.02), V(0, 0.98, 0.9), V(0, 1.28, 0.86), V(0, 1.56, 0.92), V(0, 1.8, 1.08)],
+            legs={
+                # front "legs" are little arms hanging from the chest
+                "FL": (V(0.62, -0.26, 2.02), V(0.8, -0.42, 1.68), V(0.84, -0.56, 1.36)),
+                "FR": (V(-0.62, -0.26, 2.02), V(-0.8, -0.42, 1.68), V(-0.84, -0.56, 1.36)),
+                "BL": (V(0.38, 0.2, 0.78), V(0.4, 0.1, 0.4), V(0.42, 0.02, 0.0)),
+                "BR": (V(-0.38, 0.2, 0.78), V(-0.4, 0.1, 0.4), V(-0.42, 0.02, 0.0)),
+            },
+            face_y=face_y, head_c=hc, head_r=hr, top=top,
+            back_surface=[V(0, 0.62, 2.3), V(0, 0.74, 1.92), V(0, 0.76, 1.5), V(0, 0.66, 1.1)],
+            belly_front=V(0, -0.5, 1.42),
+        )
+
+    def belly_region(self, head):
+        return sdf.ellipsoid((0, -0.45, 1.42), (0.52, 0.4, 0.82))
+
+
+FAMILIES = {"Cute": Cute(), "Heavy": Heavy(), "Weird": Weird()}
 
 
 # ═══ BODY BUILD ═══════════════════════════════════════════════════════════════
@@ -713,6 +834,18 @@ def part_legs(fam, variant):
     for leg in fam.legs:
         hip, knee, foot = s["legs"][leg]
         bones = [f"Leg{leg}1", f"Leg{leg}2"]
+        if leg in getattr(fam, "arms", ()):
+            # arms: same variant language, but they hang from the chest and never reach
+            # the ground, so no drop and a small hand instead of a paw
+            k = {"Stubby": (0.62, 0.9), "Chunky": (0.95, 0.85), "Long": (0.5, 1.25), "Noodle": (0.32, 1.45)}[variant]
+            r = lr * k[0]
+            elbow = hip + (knee - hip) * k[1]
+            hand = hip + (foot - hip) * k[1]
+            shape = sdf.smooth_union(chain_shape([hip, elbow, hand], [r, r * 0.85, r * 0.8], k=0.05 * ps),
+                                     sdf.sphere(T(hand + (hand - elbow).normalized() * r * 0.6), r * 1.25), k=0.06 * ps)
+            m = sdf_part(f"Legs__{variant}__{leg}", shape, voxel=0.018 * ps, tris=600)
+            out.append((m, bones))
+            continue
         if variant == "Stubby":
             shape = sdf.smooth_union(sdf.round_cone(T(hip + V(0, 0, 0.05)), T(foot + V(0, -0.02, 0.17) * ps), lr, lr * 0.88),
                                      sdf.ellipsoid(T(foot + V(0, -0.06, 0.1) * ps), (lr * 0.96, lr * 1.12, 0.13 * ps)), k=0.12 * ps)
@@ -839,5 +972,6 @@ def preview_creature(fam, head, selection, offset=(0, 0, 0), primary=(1.0, 0.62,
     preview_tints(objs, primary=primary)
     off = Vector(offset)
     for o in objs + [arm, parts_arm]:
-        o.location = o.location + off
+        if o.parent is None:  # children follow their armature; moving both doubles the offset
+            o.location = o.location + off
     return objs

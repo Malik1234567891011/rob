@@ -253,7 +253,10 @@ def to_mesh(name, shape, voxel=0.03, adaptivity=0.0):
     grid.transform = vdb.createLinearTransform(voxelSize=voxel)
     grid.name = "density"
     grid.gridClass = vdb.GridClass.FOG_VOLUME
-    path = os.path.join(tempfile.gettempdir(), f"fam_sdf_{name}.vdb")
+    # UNIQUE path per call: Blender caches volume grids by file path, so reusing a name
+    # (Body__Blocky for two families) silently loads the previous family's geometry.
+    import uuid
+    path = os.path.join(tempfile.gettempdir(), f"fam_sdf_{uuid.uuid4().hex}.vdb")
     vdb.write(path, grids=[grid])
 
     vol = bpy.data.volumes.new(name + "_vol")

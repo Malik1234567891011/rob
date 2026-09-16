@@ -34,6 +34,41 @@
     "sha": "d3a106ddbc3118d6",
     "type": "Model"
   },
+  "art/build/heavy_body_Blocky.fbx": {
+    "assetId": "106692562442243",
+    "at": 1789548345,
+    "name": "FAM heavy_body_Blocky",
+    "sha": "38e1d3e732d19547",
+    "type": "Model"
+  },
+  "art/build/heavy_body_Bulb.fbx": {
+    "assetId": "100934295239885",
+    "at": 1789548377,
+    "name": "FAM heavy_body_Bulb",
+    "sha": "73fef7dbe8c10879",
+    "type": "Model"
+  },
+  "art/build/heavy_body_Round.fbx": {
+    "assetId": "138402945432416",
+    "at": 1789548317,
+    "name": "FAM heavy_body_Round",
+    "sha": "4d126bd0dabd9d65",
+    "type": "Model"
+  },
+  "art/build/heavy_body_Snouted.fbx": {
+    "assetId": "99411654266732",
+    "at": 1789548355,
+    "name": "FAM heavy_body_Snouted",
+    "sha": "20338940ad515448",
+    "type": "Model"
+  },
+  "art/build/heavy_parts.fbx": {
+    "assetId": "75275291629582",
+    "at": 1789548393,
+    "name": "FAM heavy_parts",
+    "sha": "8f8978ce1781e75e",
+    "type": "Model"
+  },
   "art/build/probe_ear.fbx": {
     "assetId": "120540404644340",
     "at": 1789545210,
@@ -60,6 +95,41 @@
     "at": 1789547917,
     "name": "FAM code sync",
     "sha": "9e7369b0c223f0d2",
+    "type": "Model"
+  },
+  "art/build/weird_body_Blocky.fbx": {
+    "assetId": "117181765241913",
+    "at": 1789548409,
+    "name": "FAM weird_body_Blocky",
+    "sha": "8d60ce60e4aa2e77",
+    "type": "Model"
+  },
+  "art/build/weird_body_Bulb.fbx": {
+    "assetId": "85333041781660",
+    "at": 1789548436,
+    "name": "FAM weird_body_Bulb",
+    "sha": "28af5c45b9ccded8",
+    "type": "Model"
+  },
+  "art/build/weird_body_Round.fbx": {
+    "assetId": "112243996224700",
+    "at": 1789548403,
+    "name": "FAM weird_body_Round",
+    "sha": "a126b2ca053002fc",
+    "type": "Model"
+  },
+  "art/build/weird_body_Snouted.fbx": {
+    "assetId": "121415590625024",
+    "at": 1789548415,
+    "name": "FAM weird_body_Snouted",
+    "sha": "3dc1ba15aba6e0e2",
+    "type": "Model"
+  },
+  "art/build/weird_parts.fbx": {
+    "assetId": "114179026937031",
+    "at": 1789548477,
+    "name": "FAM weird_parts",
+    "sha": "369864c7a74a4060",
     "type": "Model"
   }
 }

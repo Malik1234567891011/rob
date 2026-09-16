@@ -166,11 +166,12 @@ Anatomy.forms = {
 		restJaw = 6, -- a permanent low snarl
 		light = 0x2F7BFF,
 		pieces = {
-			Fur = { color = 0x16161C, material = "Fabric" },
-			Glow = { color = 0x2F7BFF, material = "Neon" },
+			-- fur shading (black roots, gray tips) and the mouth live in vertex colour: tint white
+			Fur = { color = 0xFFFFFF, material = "Fabric" },
+			Glow = { color = 0x1F55FF, material = "Neon" }, -- Neon brightens: start deeper than the sheet's blue
 			Eyes = { color = 0xFF2A2A, material = "Neon" },
-			Gold = { color = 0xC49A3C, material = "Foil" },
-			Dark = { color = 0x0B0B0E, material = "SmoothPlastic" },
+			Gold = { color = 0xD9A441, material = "Metal" }, -- Foil mirrored the sky and read green
+			Dark = { color = 0xFFFFFF, material = "SmoothPlastic" },
 		},
 	},
 }

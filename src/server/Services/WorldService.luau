@@ -442,7 +442,7 @@ local function spawnLegend()
 			if not root then
 				break
 			end
-			z += dir * 0.22
+			z += dir * 0.09 -- a slow prowl, ~3 studs/s
 			if z < zB or z > zA then
 				dir = -dir
 				z = math.clamp(z, zB, zA)

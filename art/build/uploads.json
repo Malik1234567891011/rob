@@ -126,10 +126,17 @@
     "type": "Model"
   },
   "art/build/sync.rbxmx": {
-    "assetId": "78462281842897",
-    "at": 1789592005,
+    "assetId": "116958948364143",
+    "at": 1789593296,
     "name": "FAM code sync",
-    "sha": "a6e55c085e68f466",
+    "sha": "a24e718dfebe5c75",
+    "type": "Model"
+  },
+  "art/build/void_fang.fbx": {
+    "assetId": "74913100558439",
+    "at": 1789593160,
+    "name": "FAM void_fang",
+    "sha": "e1a31f1ac839d365",
     "type": "Model"
   },
   "art/build/weird_body_Blocky.fbx": {

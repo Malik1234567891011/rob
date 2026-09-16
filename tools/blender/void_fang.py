@@ -3,41 +3,46 @@
 
     /Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P tools/blender/void_fang.py [-- options]
 
-      -> art/build/void_fang.fbx              one armature + 5 meshes + Rig__Sockets
+      -> art/build/void_fang.fbx              one armature + 5 meshes + Rig__Sockets   (~12 s total)
       -> art/previews/void_fang_sheet.jpg     front / side / back / 3/4 + details, 5-stud capsule
-      -> art/previews/void_fang_rigtest.jpg   jaw +25 deg, tail curl 20 deg/bone, stress pose
+      -> art/previews/void_fang_rigtest.jpg   jaw +25 deg, tail curl 20 deg/bone, stress, blink, wag
 
 Options (after `--`):
     --no-export        skip the FBX
     --no-sheet         skip the sheet render
     --no-rigtest       skip the rig test render
-    --overlay DIR      ortho silhouettes over the sheet's front/side/back crops (iteration aid)
+    --overlay DIR      ortho renders blended over the sheet's own front/side/back drawings (iteration aid)
     --fast             half-resolution renders, fewer samples
     --verify           re-import the exported FBX and print meshes, tris, bones, weights
+    --density F        fur clump Poisson density multiplier (the Fur tri budget still caps it)
 
-Meshes (one MeshPart each in Roblox, all skinned to the same bones):
-    VoidFang__Fur    body, head, ears, lids, legs, tail + ~600 spiky fur clumps. Vertex colour
-                     carries the near-black / dark-gray fur: Part.Color WHITE.
-    VoidFang__Glow   lightning streaks + glowing tail tip. White: Neon, #2F7BFF.
-    VoidFang__Eyes   the two eyes. White: Neon, #FF2A2A.
-    VoidFang__Gold   sabre fangs + claw tips. White: tint #B8923A, Metal / high reflectance.
-    VoidFang__Dark   nose, mouth, teeth, tongue, claw roots. Vertex colour: Part.Color WHITE.
+Meshes (one MeshPart each in Roblox, all skinned to the same 33 Heavy-family bones):
+    VoidFang__Fur    body, head, ears, lids, legs, tail + ~950 fur clumps. The VERTEX COLOUR is
+                     the fur (near-black roots, dark-gray tips), so Part.Color must be WHITE:
+                     vertex colour multiplies Part.Color. Clump normals lean to the body normal.
+    VoidFang__Glow   flame streaks + glowing tail strands/tip. Vertex white: Neon #2F7BFF.
+    VoidFang__Eyes   the two eyes. Vertex white: Neon #FF2A2A.
+    VoidFang__Gold   sabre fangs + claw tips. Vertex white: tint aged gold, Foil/Metal.
+    VoidFang__Dark   nose, mouth bag, tongue, ivory teeth, claw roots. Vertex coloured: WHITE.
     Rig__Sockets     one tetrahedron per bone so the importer keeps every bone (see DECISIONS.md).
 
-Scale: 1 unit = 1 stud, Z up, facing -Y. Top of head 5.0 studs. Proportions are measured off the
-sheet's SIDE VIEW (0.01272 studs per sheet pixel with the head top pinned at 5.0), not guessed.
+Scale: 1 unit = 1 stud, Z up, facing -Y. Head top ~5.07 studs with fur (ear tips 5.43). Proportions
+are MEASURED off the sheet's SIDE VIEW (0.01272 studs per sheet pixel, head top pinned at 5.0): the
+sheet's wolf is about as long nose-to-rump (~5.5) as it is tall, so it is not 8-9 studs long.
 
 How it is built:
-  1. Body: SDF sculpt (sdf.py) of torso, neck, wolf head with a snarl gap, legs, paws, tail core.
-  2. Fur: area-weighted Poisson samples on the body; each becomes a tapered, bent, flattened
-     4-sided spike combed by a per-region direction field (mane crest up/back, chest ruff down,
-     leg feathering back/down, tail along the tail). Tips are painted dark gray.
-  3. Glow: every marking is traced from the sheet in the view it was drawn in (side / front / top
-     / back), ray-cast onto the body, and built as a raised lightning ribbon with branches. Fur
-     clumps that would bury a ribbon are shortened or dropped, so the streaks read like the sheet.
+  1. Body: SDF sculpt (sdf.py) of the coat mass: torso, mane hump, chest ruff, neck, wolf head with
+     a snarl gap, thick legs, big toed paws, tail core. Eyes are seated on the skull by marching it.
+  2. Fur: area-weighted Poisson samples on the body; each becomes a leaf-like spike (triangular
+     section, 9-15 tris) combed by a per-region direction field (mane back/up, chest ruff down,
+     leg feathering back/down, tail along the tail), tips painted dark gray.
+  3. Glow: every marking is traced from the sheet in the view it was drawn in (side / front / top),
+     smoothed into a flame, ray-cast onto the body, floated on the local fur (cast onto the clumps)
+     and built as a raised tapered ribbon; clumps rooted under or lying over a streak are trimmed.
+     The tail's flames and brush tip are glowing clumps inside the tail fur.
   4. Skin: capsule-distance weights with region masks, Laplacian-smoothed over the body surface
      (no candy-wrapper at shoulders/hips), jaw region blended onto Jaw, tail weights parametric
-     along Tail1-4. Every fur clump / streak takes the smoothed weights of the body under it.
+     along Tail1-4. Every clump / streak takes the smoothed weights of the body under it.
 """
 
 import sys
@@ -108,10 +113,10 @@ def smooth01(a, b, x):
 GLOW_HEX, EYE_HEX, GOLD_HEX = 0x2F7BFF, 0xFF2A2A, 0xB8923A
 FUR_SKIN = H(0x0E0E11)       # pitch black body under the clumps
 FUR_ROOT = H(0x0B0B0D)
-FUR_TIP = H(0x2C2E35)        # dark gray at the tips
-TAIL_TIP = H(0x42444D)       # the tail reads grayer on the sheet
+FUR_TIP = H(0x282A31)        # dark gray at the tips
+TAIL_TIP = H(0x383A42)       # the tail reads grayer on the sheet
 MUZZLE = H(0x1C1C21)
-INNER_EAR = H(0x34343B)
+INNER_EAR = H(0x4A4A53)
 NOSE = H(0x0A0A0C)
 MOUTH = H(0x3A1418)
 TONGUE = H(0x5A2A30)
@@ -124,7 +129,7 @@ WHITE = (1.0, 1.0, 1.0)
 # Sockets measured off the sheet (see module doc). creatures.Family.skeleton() builds the
 # bones, so names, parenting, roll and the tiny up/forward bone tails are identical.
 
-TAIL_PTS = [V(0, 2.6, 3.28), V(0, 2.98, 2.74), V(0, 3.24, 2.06), V(0, 3.42, 1.36), V(0, 3.52, 0.72)]
+TAIL_PTS = [V(0, 2.56, 3.46), V(0, 2.9, 2.82), V(0, 3.1, 2.08), V(0, 3.2, 1.36), V(0, 3.24, 0.76)]
 TAIL_R = [0.36, 0.34, 0.3, 0.24, 0.14]
 
 LEGS = {
@@ -137,8 +142,9 @@ LEGS = {
 HOCK = {"BL": V(0.68, 2.32, 0.98), "BR": V(-0.68, 2.32, 0.98)}
 PAW = {"FL": V(0.68, -1.15, 0.16), "FR": V(-0.68, -1.15, 0.16), "BL": V(0.7, 2.02, 0.16), "BR": V(-0.7, 2.02, 0.16)}
 
-EYE = {"L": V(0.272, -2.075, 4.35), "R": V(-0.272, -2.075, 4.35)}
-EAR_BASE = {"L": V(0.39, -1.7, 4.72), "R": V(-0.39, -1.7, 4.72)}
+EYE_GUIDE = {"L": V(0.272, -2.075, 4.35), "R": V(-0.272, -2.075, 4.35)}
+EYE = {k: v.copy() for k, v in EYE_GUIDE.items()}   # re-seated on the skull by place_eyes()
+EAR_BASE = {"L": V(0.42, -1.7, 4.72), "R": V(-0.42, -1.7, 4.72)}
 
 SOCK = dict(
     root=V(0, 0.55, 2.85), belly=V(0, 0.35, 2.35), spine=V(0, 0.55, 3.2), neck=V(0, -1.0, 3.55),
@@ -173,12 +179,26 @@ def stretch(shape, center, factors):
     return sdf.warp(shape, lambda P: (P - c) * f + c)
 
 
-def head_shape():
+def place_eyes():
+    """March the undished head SDF along each eye's facing ray and seat the eye on the skin."""
+    shape = head_shape(dishes=False)
+    for side in "LR":
+        e0 = EYE_GUIDE[side]
+        f = eye_facing(e0)
+        origin = e0 + f * 0.6
+        ts = np.linspace(0.0, 1.0, 1000)
+        P = np.array([T(origin - f * t) for t in ts], dtype=np.float32)
+        inside = np.where(shape[0](P) < 0)[0]
+        hit = origin - f * float(ts[inside[0]]) if len(inside) else e0
+        EYE[side][:] = hit - f * 0.022
+
+
+def head_shape(dishes=True):
     E, RC, su, M = sdf.ellipsoid, sdf.round_cone, sdf.smooth_union, sdf.mirror_x
     cranium = E((0, -1.76, 4.44), (0.45, 0.52, 0.42))
     occiput = E((0, -1.5, 4.38), (0.42, 0.4, 0.42))
     zyg = M(E((0.3, -1.95, 4.2), (0.2, 0.34, 0.18)))
-    brow = M(E((0.2, -2.12, 4.48), (0.16, 0.17, 0.09), rot=(0, 16, -14)))
+    brow = M(E((0.21, -2.13, 4.47), (0.17, 0.17, 0.085), rot=(0, 18, -16)))
     muzzle = stretch(RC((0, -2.06, 4.14), (0, -2.66, 4.0), 0.25, 0.135), (0, -2.36, 4.07), (1 / 1.1, 1, 1.0))
     bridge = RC((0, -2.12, 4.34), (0, -2.64, 4.08), 0.09, 0.07)
     flews = M(E((0.15, -2.3, 3.93), (0.1, 0.33, 0.09)))
@@ -189,10 +209,10 @@ def head_shape():
     head = su(head, jaw, k=0.1)
     gap = E((0, -2.44, 3.848), (0.36, 0.52, 0.034), rot=(4, 0, 0))
     head = sdf.smooth_subtract(head, gap, k=0.02)
-    for e in EYE.values():
+    for e in (EYE.values() if dishes else ()):
         f = eye_facing(e)
-        dish = sdf.sphere(T(e - f * 0.035), 0.075)
-        head = sdf.smooth_subtract(head, dish, k=0.04)
+        dish = sdf.sphere(T(e + f * 0.025), 0.068)
+        head = sdf.smooth_subtract(head, dish, k=0.03)
     return head
 
 
@@ -203,20 +223,20 @@ def leg_shapes():
     fore = RC(T(knee), (0.66, -0.95, 0.5), 0.29, 0.19)
     past = RC((0.66, -0.95, 0.5), (0.68, -1.08, 0.22), 0.19, 0.19)
     paw = PAW["FL"]
-    pad = E(T(paw), (0.33, 0.38, 0.16))
-    toes = [sph(T(t), 0.112) for t in toe_centers("FL")]
+    pad = E(T(paw), (0.37, 0.41, 0.17))
+    toes = [sph(T(t), 0.125) for t in toe_centers("FL")]
     heel = sph((0.68, -0.88, 0.14), 0.12)
     front = M(su(su(su(up, fore, k=0.14), past, k=0.1), su(su(pad, heel, k=0.07), *toes, k=0.035), k=0.12))
 
     hip, knee, foot = LEGS["BL"]
     hock = HOCK["BL"]
     thigh = RC(T(hip + V(0, 0, -0.08)), T(knee), 0.5, 0.3)
-    shin = RC(T(knee), T(hock + V(0, -0.02, 0)), 0.3, 0.17)
+    shin = RC(T(knee), T(hock + V(0, -0.02, 0)), 0.34, 0.19)
     point = sph(T(hock + V(0, 0.08, 0.02)), 0.14)
-    meta = RC(T(hock), (0.7, 2.13, 0.26), 0.17, 0.17)
+    meta = RC(T(hock), (0.7, 2.13, 0.26), 0.19, 0.18)
     paw = PAW["BL"]
-    pad = E(T(paw), (0.31, 0.36, 0.16))
-    toes = [sph(T(t), 0.105) for t in toe_centers("BL")]
+    pad = E(T(paw), (0.34, 0.38, 0.17))
+    toes = [sph(T(t), 0.115) for t in toe_centers("BL")]
     heel = sph((0.7, 2.26, 0.14), 0.12)
     hind = M(su(su(su(thigh, shin, k=0.14), point, meta, k=0.08), su(su(pad, heel, k=0.07), *toes, k=0.035), k=0.12))
     return front, hind
@@ -225,8 +245,8 @@ def leg_shapes():
 def toe_centers(leg):
     p = PAW[leg]
     front = leg[0] == "F"
-    ty = -0.31 if front else -0.28
-    spread = 0.225 if front else 0.21
+    ty = -0.34 if front else -0.3
+    spread = 0.255 if front else 0.235
     out = []
     for i, dx in enumerate((-spread, -spread / 2.9, spread / 2.9, spread)):
         back = 0.08 if i in (0, 3) else 0.0
@@ -240,11 +260,11 @@ def body_shape():
     E, RC, su, M = sdf.ellipsoid, sdf.round_cone, sdf.smooth_union, sdf.mirror_x
     chest = E((0, -0.72, 2.86), (0.86, 1.02, 0.86))
     withers = E((0, -0.45, 3.4), (0.78, 0.9, 0.52))
-    waist = E((0, 0.78, 3.0), (0.66, 0.95, 0.58))
-    hips = E((0, 1.98, 3.02), (0.72, 0.8, 0.64))
+    waist = E((0, 0.78, 3.08), (0.76, 0.95, 0.52))
+    hips = E((0, 1.98, 3.02), (0.8, 0.8, 0.64))
     torso = su(chest, withers, waist, hips, k=0.45)
     scap = M(E((0.5, -0.8, 2.8), (0.36, 0.55, 0.76), rot=(-14, 0, 0)))
-    thigh = M(E((0.46, 2.02, 2.56), (0.36, 0.66, 0.78), rot=(-24, 0, 0)))
+    thigh = M(E((0.48, 2.0, 2.56), (0.42, 0.72, 0.82), rot=(-24, 0, 0)))
     torso = su(torso, scap, thigh, k=0.3)
     neck = RC((0, -0.78, 3.32), (0, -1.55, 4.2), 0.66, 0.46)
     mane = E((0, -0.85, 3.98), (0.84, 0.86, 0.84), rot=(-35, 0, 0))
@@ -262,7 +282,7 @@ def body_shape():
 
 def eye_facing(e):
     side = 1.0 if e.x > 0 else -1.0
-    return V(0.44 * side, -1.0, 0.06).normalized()
+    return V(0.26 * side, -1.0, 0.06).normalized()
 
 
 # ═══ MESH ACCUMULATOR ══════════════════════════════════════════════════════════
@@ -274,9 +294,12 @@ class Acc:
         self.bones = bones
         self.bi = {b: i for i, b in enumerate(bones)}
         self.V, self.F, self.C, self.W = [], [], [], []
+        self.N = {}
 
-    def add(self, verts, faces, cols, weights):
+    def add(self, verts, faces, cols, weights, normals=None):
         o = len(self.V)
+        if normals is not None:
+            self.N.update({o + i: Vector(nv).normalized() for i, nv in enumerate(normals)})
         self.V.extend([T(v) for v in verts])
         self.F.extend([tuple(i + o for i in f) for f in faces])
         if isinstance(cols, tuple) and len(cols) == 3 and not isinstance(cols[0], (tuple, list)):
@@ -293,10 +316,16 @@ class Acc:
         return sum(len(f) - 2 for f in self.F)
 
     def build(self, name, arm):
+        self.V = [(x, y, max(z, 0.0)) for x, y, z in self.V]
         me = bpy.data.meshes.new(name)
         me.from_pydata(self.V, [], self.F)
         me.update()
         me.shade_smooth()
+        if self.N:
+            vn = [v.normal.copy() for v in me.vertices]
+            for i, nv in self.N.items():
+                vn[i] = nv
+            me.normals_split_custom_set_from_vertices(vn)
         obj = bpy.data.objects.new(name, me)
         fk.link(obj)
         ca = me.color_attributes.new("Col", "BYTE_COLOR", "CORNER")
@@ -630,33 +659,37 @@ def fur_params(p, n):
 
     # ── tail ──────────────────────────────────────────────────────────────
     dt, tt = dist_poly(p, TAIL_PTS)
-    if y > 2.55 and dt < 0.6 and (tt > 0.05 or y > 2.75):
+    if y > 2.55 and dt < 0.6 and (tt > 0.1 or y > 2.85):
         c, tan, back, side, r = tail_frame(tt)
         radial = (p - c)
         radial = (radial - tan * radial.dot(tan)).normalized()
-        g = tan + radial * 0.15
-        return dict(kind="tail", g=g, lift=15 + 13 * math.sin(math.pi * min(tt, 1.0)), L=0.72 + 0.36 * math.sin(math.pi * (0.15 + 0.75 * tt)),
+        g = tan + radial * 0.1
+        root = ss(0.22, 0.02, tt)   # lie flat over the rump where the tail leaves it: no ledge
+        return dict(kind="tail", g=g, lift=(13 + 11 * math.sin(math.pi * min(tt, 1.0))) * (1 - 0.7 * root),
+                    L=(0.66 + 0.3 * math.sin(math.pi * (0.15 + 0.75 * tt))) * (1 - 0.25 * root),
                     W=0.44, space=0.15, tip=TAIL_TIP, bend=0.14, droop=0.0, prio=4, tt=tt)
 
     # ── head ──────────────────────────────────────────────────────────────
     if y < -1.42 and z > 3.5:
         for e in EYE.values():
-            if (p - e).length < 0.16:
+            if (p - e).length < 0.24:
                 return None
         for b in EAR_BASE.values():
             if (p - b).length < 0.15:
                 return None
         if y < -2.02 and z > 3.7:
             return None  # muzzle and face stay smooth
+        if z > 4.46 and ax < 0.3 and y < -1.75:
+            return dict(kind="brow", g=V(sd * 0.15, 1, 0.2), lift=6, L=0.2, W=0.13, space=0.085, tip=FUR_TIP, bend=0.08, droop=0, prio=4)
         if z > 4.56 and ax < 0.42:
             k = ss(-2.0, -1.5, y)
             return dict(kind="crown", g=V(sd * 0.25, 1, 0.45), lift=18, L=0.22 + 0.2 * k, W=0.18 + 0.08 * k, space=0.1, tip=FUR_TIP, bend=0.12,
                         droop=0, prio=4)
-        if ax > 0.2 and y > -2.08 and 3.62 < z < 4.56:
+        if ax > 0.2 and y > -2.0 and 3.62 < z < 4.5:
             k = ss(-2.05, -1.58, y)
-            return dict(kind="cheek", g=V(sd * 0.85, 0.62, -0.28), lift=26, L=0.32 + 0.36 * k, W=0.2 + 0.08 * k, space=0.095, tip=FUR_TIP,
+            return dict(kind="cheek", g=V(sd * 1.0, 0.5, -0.3), lift=30, L=0.42 + 0.4 * k, W=0.22 + 0.08 * k, space=0.09, tip=FUR_TIP,
                         bend=0.14, droop=0.04, prio=5)
-        if z >= 4.4:
+        if z >= 4.4 and y > -2.0:
             return dict(kind="headside", g=V(sd * 0.45, 1, 0.1), lift=14, L=0.3, W=0.18, space=0.1, tip=FUR_TIP, bend=0.1, droop=0, prio=4)
         if z < 3.82:
             k = ss(-2.3, -1.6, y)
@@ -675,29 +708,31 @@ def fur_params(p, n):
         d, _ = dist_poly(p, chain)
         if d > 0.55:
             continue
-        if z < 0.3:
+        if z < 0.55:
             return None
-        if n.y > 0.1 and z > (0.75 if front else 0.6):
+        if n.y > 0.1 and z > (0.75 if front else 0.62):
             k = ss(0.8, 1.9, z) if front else ss(0.6, 1.7, z)
-            return dict(kind="feather", g=V(sd * 0.15, 0.6, -1), lift=28, L=0.32 + 0.26 * k, W=0.24, space=0.11, tip=FUR_TIP,
+            return dict(kind="feather", g=V(sd * 0.15, 0.6, -1), lift=24, L=0.28 + 0.2 * k, W=0.24, space=0.11, tip=FUR_TIP,
                         bend=0.14, droop=0.05, prio=3)
-        return dict(kind="legside", g=V(sd * 0.08, 0.12, -1), lift=17, L=0.22 + 0.12 * ss(0.4, 1.6, z), W=0.22, space=0.12, tip=FUR_TIP,
-                    bend=0.1, droop=0, prio=3)
+        low = ss(1.05, 0.55, z)
+        return dict(kind="legside", g=V(sd * 0.08, 0.12, -1), lift=17 - 9 * low, L=0.24 + 0.1 * ss(0.4, 1.6, z) - 0.06 * low, W=0.22 - 0.05 * low,
+                    space=0.13, tip=FUR_TIP,
+                    bend=0.1, droop=0, prio=2)
 
     # ── neck + mane + chest ruff ──────────────────────────────────────────
     front_facing = n.y < -0.2 or n.z < -0.3
     if y < -0.5 and 1.62 < z < 3.95 and front_facing and ax < 1.0:
         k = ss(3.6, 2.1, z)
-        return dict(kind="ruff", g=V(sd * 0.2, 0.3, -1), lift=16 + 10 * k, L=0.5 + 0.36 * k, W=0.4, space=0.15, tip=FUR_TIP,
+        return dict(kind="ruff", g=V(sd * 0.2, 0.35, -1), lift=14 + 8 * k, L=0.5 + 0.22 * k, W=0.4, space=0.15, tip=FUR_TIP,
                     bend=0.14, droop=0.05, prio=5)
     if -1.85 < y < 0.7 and z > 2.95:
         crest_peak = math.exp(-((y + 0.7) / 0.8) ** 2)
         fade = ss(0.7, 0.0, y)
-        near_head = 0.55 + 0.45 * ss(-1.8, -1.3, y)
+        near_head = 0.42 + 0.58 * ss(-1.75, -0.95, y)
         if n.z > 0.35 and z > 3.5:
-            return dict(kind="crest", g=V(sd * 0.3, 1, 0.3), lift=20 + 10 * max(0.0, n.z - 0.5),
+            return dict(kind="crest", g=V(sd * 0.1, 1, 0.18), lift=(16 + 8 * max(0.0, n.z - 0.5)) * (0.55 + 0.45 * ss(-1.6, -1.0, y)),
                         L=(0.66 + 0.42 * crest_peak) * (0.7 + 0.3 * fade) * near_head, W=0.42, space=0.15, tip=FUR_TIP, bend=0.2, droop=0.0, prio=6)
-        return dict(kind="mane", g=V(sd * 0.5, 1, -0.45), lift=17, L=(0.64 + 0.3 * crest_peak) * (0.78 + 0.22 * fade) * near_head, W=0.42,
+        return dict(kind="mane", g=V(sd * 0.2, 1, -0.55 - 0.35 * ss(3.8, 4.4, z)), lift=8 + 5 * ss(3.2, 3.8, z) - 5 * ss(3.8, 4.4, z), L=(0.64 + 0.3 * crest_peak) * (0.78 + 0.22 * fade) * near_head, W=0.42,
                     space=0.15, tip=FUR_TIP, bend=0.16, droop=0.06, prio=6)
 
     # ── shoulders / upper forelegs ────────────────────────────────────────
@@ -707,7 +742,7 @@ def fur_params(p, n):
 
     # ── belly ─────────────────────────────────────────────────────────────
     if -0.7 < y < 1.5 and n.z < -0.35 and z < 2.8:
-        return dict(kind="belly", g=V(sd * 0.15, 0.45, -1), lift=24, L=0.42 + 0.16 * ss(1.3, 0.0, y), W=0.32, space=0.15, tip=FUR_TIP,
+        return dict(kind="belly", g=V(sd * 0.15, 0.6, -1), lift=16, L=0.34 + 0.1 * ss(1.3, 0.0, y), W=0.32, space=0.15, tip=FUR_TIP,
                     bend=0.12, droop=0.08, prio=3)
 
     # ── rump + thighs ─────────────────────────────────────────────────────
@@ -715,14 +750,14 @@ def fur_params(p, n):
         if n.y > 0.45:
             return dict(kind="haunch", g=V(sd * 0.3, 0.6, -1), lift=18, L=0.58, W=0.38, space=0.16, tip=FUR_TIP, bend=0.14, droop=0.05, prio=4)
         if n.z > 0.55:
-            return dict(kind="back", g=V(sd * 0.3, 1, 0.0), lift=13, L=0.56, W=0.38, space=0.17, tip=FUR_TIP, bend=0.14, droop=0, prio=3)
+            return dict(kind="back", g=V(sd * 0.15, 1, -0.35 * ss(2.0, 2.6, y)), lift=11 - 6 * ss(2.0, 2.6, y), L=0.58 + 0.2 * ss(2.0, 2.6, y), W=0.4, space=0.16, tip=FUR_TIP, bend=0.12, droop=0, prio=5)
         return dict(kind="thigh", g=V(sd * 0.12, 0.55, -1), lift=10, L=0.5, W=0.36, space=0.17, tip=FUR_TIP, bend=0.12, droop=0.03, prio=3)
 
     # ── back + flank ──────────────────────────────────────────────────────
     if n.z > 0.5:
-        return dict(kind="back", g=V(sd * 0.3, 1, 0.05), lift=14 + 6 * ss(1.4, 0.4, y), L=0.6 - 0.06 * ss(0.6, 1.4, y), W=0.38, space=0.17,
-                    tip=FUR_TIP, bend=0.16, droop=0.0, prio=3)
-    return dict(kind="flank", g=V(sd * 0.18, 1, -0.5), lift=10, L=0.54, W=0.38, space=0.17, tip=FUR_TIP, bend=0.12, droop=0.03, prio=3)
+        return dict(kind="back", g=V(sd * 0.15, 1, -0.05), lift=10 + 5 * ss(1.4, 0.4, y), L=0.62 - 0.06 * ss(0.6, 1.4, y), W=0.4, space=0.16,
+                    tip=FUR_TIP, bend=0.12, droop=0.02, prio=5)
+    return dict(kind="flank", g=V(sd * 0.1, 1, -0.5), lift=10, L=0.56, W=0.4, space=0.16, tip=FUR_TIP, bend=0.12, droop=0.03, prio=4)
 
 
 def sample_clumps(body, rng, density=1.0, n_candidates=26000):
@@ -804,7 +839,7 @@ def clump_geometry(sp):
     ss = [0.0, 0.34, 0.68] if L > 0.42 else [0.0, 0.5]
     prof = {0.0: 0.8, 0.34: 1.0, 0.68: 0.62, 0.5: 0.82}
     pts = [clump_center(sp, s) for s in ss] + [clump_center(sp, 1.0)]
-    verts, faces, cols, rings = [], [], [], []
+    verts, faces, cols, rings, nrm = [], [], [], [], []
     tipc = tuple(min(1.0, c * sp["tipk"]) for c in sp["tip"])
     for i, s in enumerate(ss):
         c = pts[i]
@@ -821,10 +856,13 @@ def clump_geometry(sp):
             ring.append(len(verts))
             verts.append(c + off)
             cols.append(col if k == 1 else tuple(v * 0.72 for v in col))
+            nrm.append((sp["n"] * 0.72 + off.normalized() * 0.28).normalized())
         rings.append(ring)
     tip = len(verts)
     verts.append(pts[-1])
     cols.append(tipc)
+    nrm.append((sp["n"] * 0.8 + sp["d"] * 0.2).normalized())
+    sp["_normals"] = nrm
     for A, B in zip(rings[:-1], rings[1:]):
         for k in range(3):
             faces.append((A[k], A[(k + 1) % 3], B[(k + 1) % 3], B[k]))
@@ -832,6 +870,18 @@ def clump_geometry(sp):
     for k in range(3):
         faces.append((A[k], A[(k + 1) % 3], tip))
     return verts, faces, cols
+
+
+def keep_above_ground(sp, floor=0.03):
+    """Shorten a clump until its whole geometry clears the ground; drop it if that leaves a stub."""
+    L0 = sp["L"]
+    for _ in range(8):
+        v, _, _ = clump_geometry(sp)
+        if min(q.z for q in v) >= floor:
+            return True
+        sp["L"] *= 0.8
+    sp["L"] = L0
+    return False
 
 
 def clump_tris(sp):
@@ -844,35 +894,34 @@ def clump_tris(sp):
 
 MARKS = [
     # neck: two flames from under the ear down the side of the neck toward the chest
-    ("side", True, 0.11, [(-1.12, 4.52), (-1.26, 4.24), (-1.2, 4.02), (-1.34, 3.72)], []),
-    ("side", True, 0.12, [(-1.24, 3.66), (-1.38, 3.34), (-1.32, 3.14), (-1.46, 2.8)], [(1, [(-1.18, 3.22), (-1.1, 3.06)])]),
+    ("side", True, 0.12, [(-1.12, 4.36), (-1.28, 4.02), (-1.36, 3.62)], []),
+    ("side", True, 0.14, [(-1.26, 3.56), (-1.42, 3.18), (-1.48, 2.78)], [(1, [(-1.24, 3.04)])]),
     # cheek flick from the eye back
-    ("side", True, 0.05, [(-1.98, 4.4), (-1.84, 4.33), (-1.66, 4.36), (-1.5, 4.28)], []),
-    # shoulder lightning + companion
-    ("side", True, 0.15, [(0.1, 3.95), (-0.12, 3.62), (-0.06, 3.46), (-0.32, 3.14), (-0.26, 2.98), (-0.5, 2.62)],
-     [(2, [(0.12, 3.2), (0.04, 2.98)])]),
-    ("side", True, 0.11, [(-0.34, 3.8), (-0.52, 3.5), (-0.46, 3.38), (-0.7, 3.02)], []),
+    ("side", True, 0.065, [(-1.98, 4.4), (-1.78, 4.34), (-1.52, 4.3)], []),
+    # shoulder: three parallel slashes, withers down toward the elbow
+    ("side", True, 0.17, [(0.0, 3.78), (-0.24, 3.3), (-0.5, 2.66)], [(1, [(-0.02, 3.02)])]),
+    ("side", True, 0.12, [(-0.34, 3.82), (-0.52, 3.44), (-0.72, 3.02)], []),
+    ("side", True, 0.1, [(0.3, 3.5), (0.12, 3.18), (-0.06, 2.9)], []),
     # foreleg
-    ("side", True, 0.11, [(-0.5, 1.9), (-0.62, 1.58), (-0.56, 1.44), (-0.72, 1.1), (-0.78, 0.8)], []),
+    ("side", True, 0.12, [(-0.5, 1.92), (-0.62, 1.4), (-0.78, 0.84)], [(1, [(-0.46, 1.2)])]),
     # ribs
-    ("side", True, 0.08, [(0.12, 2.72), (0.36, 2.86), (0.32, 2.96), (0.6, 3.1)], []),
-    # back of the thigh down the gaskin toward the hock
-    ("side", True, 0.11, [(2.36, 2.72), (2.48, 2.42), (2.42, 2.28), (2.46, 1.98), (2.3, 1.7), (2.34, 1.5), (2.24, 1.22)], []),
+    ("side", True, 0.09, [(0.14, 2.72), (0.4, 2.9), (0.62, 3.12)], []),
+    # back of the thigh, down the gaskin toward the hock
+    ("side", True, 0.13, [(2.36, 2.74), (2.46, 2.2), (2.28, 1.64), (2.22, 1.2)], []),
     # forehead flame between the eyes
-    ("front", False, 0.08, [(0.0, 4.36), (0.012, 4.5), (-0.01, 4.62), (0.0, 4.8)],
-     [(1, [(0.06, 4.56), (0.09, 4.64)]), (1, [(-0.06, 4.56), (-0.09, 4.64)])]),
-    # chest zig-zags (front view)
-    ("front", True, 0.095, [(0.64, 3.62), (0.52, 3.38), (0.58, 3.28), (0.42, 3.02)], []),
-    ("front", True, 0.13, [(0.76, 3.06), (0.6, 2.82), (0.66, 2.7), (0.48, 2.46), (0.54, 2.36), (0.32, 2.1)], []),
+    ("front", False, 0.095, [(0.0, 4.38), (0.0, 4.58), (0.0, 4.84)], [(1, [(0.1, 4.68)]), (1, [(-0.1, 4.68)])]),
+    # chest flames (front view)
+    ("front", True, 0.15, [(0.66, 3.58), (0.54, 3.3), (0.44, 3.04)], []),
+    ("front", True, 0.2, [(0.72, 2.98), (0.58, 2.62), (0.38, 2.22)], [(1, [(0.74, 2.5)])]),
     # forearms (front view)
-    ("front", True, 0.1, [(0.58, 1.6), (0.66, 1.34), (0.6, 1.22), (0.72, 0.95)], []),
+    ("front", True, 0.15, [(0.6, 1.6), (0.66, 1.3), (0.72, 1.0)], []),
     # spine (top view), in three flames
-    ("top", False, 0.08, [(0, -1.85), (0, -1.5), (0, -1.15), (0, -0.8), (0, -0.4)], []),
-    ("top", False, 0.08, [(0, -0.5), (0, -0.1), (0, 0.3), (0, 0.7), (0, 1.05)], []),
-    ("top", False, 0.075, [(0, 0.95), (0, 1.35), (0, 1.75), (0, 2.15), (0, 2.6)], []),
+    ("top", False, 0.09, [(0, -1.85), (0, -1.15), (0, -0.4)], []),
+    ("top", False, 0.09, [(0, -0.5), (0, 0.3), (0, 1.05)], []),
+    ("top", False, 0.085, [(0, 0.95), (0, 1.75), (0, 2.6)], []),
 ]
 # fishbone chevrons off the spine (top view): (y, length), small at the neck, longer mid-back
-CHEVRONS = [(-1.45, 0.1), (-1.15, 0.13), (-0.85, 0.16), (-0.45, 0.2), (-0.05, 0.22), (0.4, 0.23), (0.85, 0.22), (1.3, 0.2), (1.75, 0.17), (2.15, 0.14)]
+CHEVRONS = [(-1.45, 0.12), (-1.15, 0.15), (-0.85, 0.18), (-0.45, 0.22), (-0.05, 0.24), (0.4, 0.25), (0.85, 0.24), (1.3, 0.22), (1.75, 0.19), (2.15, 0.15)]
 
 
 def cast_2d(body, view, u, v, sgn):
@@ -912,13 +961,15 @@ def stroke_paths():
     for y0, length in CHEVRONS:
         for sgn in (1.0, -1.0):
             pts = [(0.02, y0), (0.4 * length, y0 + 0.32 * length), (length, y0 + 0.9 * length)]
-            paths.append(("top", sgn, pts, 0.055, "branch"))
+            paths.append(("top", sgn, pts, 0.07, "branch"))
     return paths
 
 
 def project_strokes(body):
     strokes = []
     for view, sgn, pts, width, kind in stroke_paths():
+        if len(pts) >= 3:
+            pts = [(c.x, c.y) for c in curve([V(u, v, 0) for u, v in pts], 8 * len(pts))]
         dense = resample2d(pts, 0.04)
         run = []
         for u, v in dense:
@@ -961,11 +1012,12 @@ def project_strokes(body):
 
 
 def stroke_width(u, width, kind):
+    """Flame profile: a soft start, fattest around a third of the way, a needle tip."""
     if kind == "branch":
-        return width * (min(1.0, u / 0.12) ** 0.5) * ((1 - u) ** 0.9) * 1.25
-    if u < 0.28:
-        return width * (0.25 + 0.75 * math.sin(u / 0.28 * math.pi / 2))
-    return width * ((1 - u) / 0.72) ** 0.85
+        return width * (min(1.0, u / 0.15) ** 0.6) * ((1 - u) ** 1.1) * 1.35
+    if u < 0.32:
+        return width * (0.2 + 0.8 * math.sin(u / 0.32 * math.pi / 2))
+    return width * ((1 - u) / 0.68) ** 1.15
 
 
 def stroke_geometry(st):
@@ -1035,7 +1087,7 @@ def drop_rooted_in_strokes(specs, strokes):
     return kept
 
 
-def lift_strokes(strokes, clump_bvh, ceiling=0.36):
+def lift_strokes(strokes, clump_bvh, ceiling=0.26):
     """Float each streak on top of the local fur: cast down onto the clumps, max-filter, smooth, clamp."""
     for st in strokes:
         m = len(st["pts"])
@@ -1045,14 +1097,11 @@ def lift_strokes(strokes, clump_bvh, ceiling=0.36):
             side = n.cross(tan).normalized()
             w = stroke_width(i / (m - 1), st["width"], st["kind"]) * 0.5
             h = 0.0
-            for o in (0.0, w, -w):
-                origin = p + side * o + n * 0.8
-                loc, _, _, dist = clump_bvh.ray_cast(origin, -n, 0.8)
-                if loc is not None:
-                    h = max(h, 0.8 - dist)
+            loc, _, _, dist = clump_bvh.ray_cast(p + n * 0.8, -n, 0.8)
+            if loc is not None:
+                h = 0.8 - dist
             raw.append(min(max(h, 0.03), ceiling))
-        mx = [max(raw[max(0, i - 3): i + 4]) for i in range(m)]
-        sm = [sum(mx[max(0, i - 2): i + 3]) / len(mx[max(0, i - 2): i + 3]) for i in range(m)]
+        sm = [sum(raw[max(0, i - 2): i + 3]) / len(raw[max(0, i - 2): i + 3]) for i in range(m)]
         st["lift"] = [h + 0.03 for h in sm]
 
 
@@ -1079,7 +1128,7 @@ def trim_over_strokes(specs, strokes):
                 rel = c - qp
                 h = rel.dot(qn)
                 lat = (rel - qn * h).length
-                if lat < qw + 0.03 and h > ql - 0.04:
+                if lat < qw + 0.02 + sp["W"] * 0.42 and h > ql - 0.05:
                     cut = s
                     break
             if cut is not None:
@@ -1111,38 +1160,49 @@ def tail_glow_clumps(rng):
         sp["base"] = p
         out.append(sp)
 
-    for i in range(9):
-        tt = 0.08 + i * 0.085
-        for phi in (62, -62):
-            add(tt + rng.uniform(-0.02, 0.02), math.radians(phi + rng.uniform(-8, 8)), 16, 0.62, 0.13, 0.2)
-    for i in range(6):
-        add(0.05 + i * 0.12, rng.uniform(-0.1, 0.1), 14, 0.42, 0.075, 0.14)
-    for i in range(16):
-        phi = i / 16 * math.tau
-        tt = rng.uniform(0.8, 0.93)
-        add(tt, phi, 14 + rng.uniform(0, 10), 0.55 + rng.uniform(0, 0.25), 0.14, 0.02)
+    # two flames down the back of the tail that converge into the glowing tip (the sheet's BACK view)
+    for i in range(8):
+        tt = 0.08 + i * 0.09
+        spread = 46 - 30 * (tt / 0.72)
+        for sgn in (1, -1):
+            add(tt + rng.uniform(-0.015, 0.015), math.radians(sgn * (spread + rng.uniform(-5, 5))), 13, 0.78, 0.2, 0.26)
+    for i in range(4):
+        add(0.1 + i * 0.16, rng.uniform(-0.08, 0.08), 12, 0.5, 0.11, 0.24)
+    for i in range(18):
+        phi = i / 18 * math.tau
+        tt = rng.uniform(0.78, 0.93)
+        add(tt, phi, 12 + rng.uniform(0, 10), 0.62 + rng.uniform(0, 0.25), 0.17, 0.04)
     return out
 
 
 # ═══ PARTS: ears, lids, eyes, nose, mouth, fangs, claws ═════════════════════════════
 
 def ear_geometry(side):
+    """Tall pointed wolf ear: a cone with a concave opening facing forward-out. Returns
+    verts, faces, colours and the ear's rotation (for the tufts)."""
     sd = 1.0 if side == "L" else -1.0
     base = EAR_BASE[side]
-    height, width, depth = 0.66, 0.54, 0.34
-    # ring outline: front centre pushed back = the concave ear opening
-    outline = [(-1, 0.05), (-0.72, -0.55), (-0.3, -0.35), (0.0, -0.12), (0.3, -0.35), (0.72, -0.55), (1, 0.05), (0.66, 0.62), (0, 0.85), (-0.66, 0.62)]
-    levels = [(0.0, 1.0), (0.3, 0.9), (0.58, 0.62), (0.82, 0.3)]
-    R = Euler((math.radians(-8), math.radians(8 * sd), math.radians(12 * sd))).to_matrix()
+    height, width, depth = 0.72, 0.66, 0.5
+    ctrl = [(-1, 0.05), (-0.72, -0.55), (-0.3, -0.35), (0.0, -0.1), (0.3, -0.35), (0.72, -0.55), (1, 0.05), (0.66, 0.62), (0, 0.85), (-0.66, 0.62)]
+    outline = []
+    for i in range(len(ctrl)):   # doubled outline, midpoints pushed out a little
+        a, b = ctrl[i], ctrl[(i + 1) % len(ctrl)]
+        outline.append(a)
+        mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+        r = math.hypot(mx, my) or 1.0
+        bulge = 1.06 if my >= -0.2 else 1.0
+        outline.append((mx * bulge, my * bulge))
+    levels = [(0.0, 1.0), (0.18, 0.97), (0.38, 0.84), (0.58, 0.64), (0.76, 0.42), (0.9, 0.22)]
+    R = Euler((math.radians(-8), math.radians(8 * sd), math.radians(26 * sd))).to_matrix()
     verts, faces, cols, rings = [], [], [], []
     for h, k in levels:
         ring = []
-        for j, (ox, oy) in enumerate(outline):
-            local = V(ox * width * 0.5 * k + sd * 0.03 * h, oy * depth * 0.5 * (0.6 + 0.4 * k), h * height)
+        for ox, oy in outline:
+            local = V(ox * width * 0.5 * k + sd * 0.03 * h, oy * depth * 0.5 * (0.55 + 0.45 * k), h * height)
             ring.append(len(verts))
             verts.append(base + R @ local)
-            inner = oy < -0.2 and abs(ox) < 0.5
-            cols.append(INNER_EAR if inner and h > 0.1 else FUR_SKIN)
+            inner = oy < -0.12 and abs(ox) < 0.62
+            cols.append(INNER_EAR if inner and 0.08 < h < 0.8 else FUR_SKIN)
         rings.append(ring)
     tip = len(verts)
     verts.append(base + R @ V(sd * 0.05, 0.02, height * 1.02))
@@ -1153,7 +1213,6 @@ def ear_geometry(side):
             faces.append((a[j], a[(j + 1) % m], b[(j + 1) % m], b[j]))
     for j in range(m):
         faces.append((rings[-1][j], rings[-1][(j + 1) % m], tip))
-    # flip if the winding came out inward (outline runs clockwise seen from the tip)
     c = sum(verts, Vector()) / len(verts)
     f = faces[0]
     nrm = (verts[f[1]] - verts[f[0]]).cross(verts[f[2]] - verts[f[0]])
@@ -1162,14 +1221,35 @@ def ear_geometry(side):
     return verts, faces, cols, R
 
 
+def ear_tufts(side, R, rng):
+    """Light fur inside the ear opening + dark tufts hiding the ear/skull seam (rigid to the ear)."""
+    sd = 1.0 if side == "L" else -1.0
+    base = EAR_BASE[side]
+    out = []
+    specs = [((-0.09, -0.06, 0.1), (0, -1, 0.1), (0.1, 0.1, 1), 22, 0.3, 0.12, H(0x55555E)),
+             ((0.09, -0.06, 0.1), (0, -1, 0.1), (-0.1, 0.1, 1), 22, 0.3, 0.12, H(0x55555E)),
+             ((0.0, -0.05, 0.24), (0, -1, 0.15), (0, 0.1, 1), 18, 0.26, 0.1, H(0x5C5C66))]
+    for dx in (-0.22, -0.08, 0.08, 0.22):
+        specs.append(((dx, 0.16, 0.06), (0, 1, 0.3), (dx * 1.5, 0.35, 1), 14, 0.28, 0.17, FUR_TIP))
+    for dx in (-0.27, 0.27):
+        specs.append(((dx, -0.02, 0.05), (math.copysign(1, dx), 0, 0.2), (dx * 2, 0.2, 1), 16, 0.26, 0.15, FUR_TIP))
+    for loc, n, g, lift, L, W, tip in specs:
+        n = (R @ V(*n)).normalized()
+        sp = dict(p=base + R @ V(loc[0] * sd, loc[1], loc[2]), n=n, g=R @ V(g[0] * sd, g[1], g[2]), lift=lift, L=L, W=W, bend=0.1, droop=0.0,
+                  tip=tip, kind="ear", prio=9)
+        finalize_clump(sp, rng)
+        out.append(sp)
+    return out
+
+
 def lid_geometry(side):
     """Upper-lid shell, rest pose OPEN (tucked up/back), exactly the creatures.py convention:
     the animator rotates LidX by -165 deg to close it."""
     e = EYE[side]
-    r = 0.108
+    r = 0.128
     bm = bmesh.new()
-    bmesh.ops.create_uvsphere(bm, u_segments=14, v_segments=8, radius=r)
-    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z < -r * 0.04], context="VERTS")
+    bmesh.ops.create_uvsphere(bm, u_segments=16, v_segments=10, radius=r)
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z < -r * 0.12], context="VERTS")
     m = Matrix.Translation(e) @ Euler((math.radians(-78), 0, 0)).to_matrix().to_4x4() @ Matrix.Diagonal(V(1.0, 0.62, 0.66, 1.0))
     bmesh.ops.transform(bm, matrix=m, verts=bm.verts)
     bmesh.ops.solidify(bm, geom=bm.faces[:], thickness=0.016)
@@ -1192,7 +1272,7 @@ def eye_geometry(side):
     roll = Quaternion(f, math.radians(15 * sd))   # outer corner up: the angry slant
     ex, ez = roll @ ex, roll @ ez
     B = Matrix((ex, f, ez)).transposed()
-    return ellipsoid_mesh(e + f * 0.006, (0.112, 0.036, 0.05), B, seg=16, rings=8)
+    return ellipsoid_mesh(e, (0.122, 0.036, 0.04), B, seg=16, rings=8)
 
 
 def fang_geometry(side):
@@ -1208,22 +1288,22 @@ def fang_geometry(side):
 
 def claw_geometry(leg, toe):
     front = leg[0] == "F"
-    fwd = V(0, -1, 0)
-    base = toe + V(0, -0.045, 0.035)
-    ctrl = [base, base + V(0, -0.08, 0.004), base + V(0, -0.15, -0.035), base + V(0, -0.185, -0.1), base + V(0, -0.19, -0.135)]
+    base = toe + V(0, -0.05, 0.04)
+    k = 1.22 if front else 1.1
+    ctrl = [base, base + V(0, -0.1, 0.006) * k, base + V(0, -0.19, -0.04) * k, base + V(0, -0.235, -0.12) * k, base + V(0, -0.24, -0.165) * k]
     pts = curve(ctrl, 8)
-    radii = [0.04, 0.038, 0.034, 0.028, 0.021, 0.014, 0.007, 0.0]
-    if not front:
-        radii = [r * 0.92 for r in radii]
-    dark_v, dark_f, _ = tube(pts[:5], radii[:5], sides=7, ref_side=(1, 0, 0), sx=0.85, cap_start=False)
-    gold_v, gold_f, _ = tube(pts[3:], radii[3:], sides=7, ref_side=(1, 0, 0), sx=0.85, cap_start=True)
-    # the dark root sleeve is a hair fatter so it hides the join
+    tip_z = pts[-1].z
+    if tip_z < 0.004:
+        pts = [q + V(0, 0, 0.004 - tip_z) for q in pts]
+    radii = [r * k for r in (0.052, 0.049, 0.043, 0.035, 0.026, 0.017, 0.008, 0.0)]
+    dark_v, dark_f, _ = tube(pts[:4], radii[:4], sides=7, ref_side=(1, 0, 0), sx=0.85, cap_start=False)
+    gold_v, gold_f, _ = tube(pts[2:], radii[2:], sides=7, ref_side=(1, 0, 0), sx=0.85, cap_start=True)
     dark_v = [pts_near(v, pts) for v in dark_v]
     return (dark_v, dark_f), (gold_v, gold_f)
 
 
 def pts_near(v, pts):
-    best = min(pts[:5], key=lambda q: (q - v).length)
+    best = min(pts[:4], key=lambda q: (q - v).length)
     return best + (v - best) * 1.06
 
 
@@ -1263,6 +1343,8 @@ def build(args):
     rng = np.random.default_rng(1337)
     prng = random.Random(1337)
     fk.reset_scene()
+    place_eyes()
+    log("eyes", {k: tuple(round(c, 3) for c in v) for k, v in EYE.items()})
     arm = build_armature()
     bones = [b.name for b in arm.data.bones]
     log("bones", len(bones))
@@ -1280,10 +1362,7 @@ def build(args):
     for sp in specs:
         finalize_clump(sp, prng)
     specs = [sp for sp in specs if not (sp["kind"] == "tail" and sp.get("tt", 0) > 0.88)]
-    for sp in specs:  # keep every tip above the ground
-        tip = clump_center(sp, 1.0)
-        if tip.z < 0.04:
-            sp["L"] *= max(0.3, (sp["base"].z - 0.04) / max(sp["base"].z - tip.z, 1e-6))
+    specs = [sp for sp in specs if keep_above_ground(sp)]
     specs = drop_rooted_in_strokes(specs, strokes)
 
     # ears / lids
@@ -1334,10 +1413,13 @@ def build(args):
             w = wt * k + wb[None, :] * (1 - k)
         else:
             w = np.repeat(body.nearest(sp["p"])[2][None, :], len(v), axis=0)
-        fur.add(v, f, c, w)
+        fur.add(v, f, c, w, normals=sp["_normals"])
     for s in "LR":
-        v, f, c, _ = ears[s]
+        v, f, c, R = ears[s]
         fur.add(v, f, c, "Ear" + s)
+        for sp in ear_tufts(s, R, prng):
+            tv, tf, tc = clump_geometry(sp)
+            fur.add(tv, tf, tc, "Ear" + s, normals=sp["_normals"])
         v, f = lids[s]
         fur.add(v, f, FUR_SKIN, "Lid" + s)
     fur_obj = fur.build(f"{NAME}__Fur", arm)
@@ -1456,7 +1538,7 @@ def preview_materials(meshes):
     attr.layer_name = "Col"
     nt.links.new(attr.outputs[0], b.inputs["Base Color"])
     b.inputs["Roughness"].default_value = 0.62
-    b.inputs["Specular IOR Level"].default_value = 0.25
+    b.inputs["Specular IOR Level"].default_value = 0.2
     b.inputs["Sheen Weight"].default_value = 0.15
     b.inputs["Sheen Roughness"].default_value = 0.35
     b.inputs["Sheen Tint"].default_value = (0.55, 0.6, 0.75, 1)
@@ -1467,7 +1549,7 @@ def preview_materials(meshes):
     nt.links.new(attr.outputs[0], b.inputs["Base Color"])
     b.inputs["Roughness"].default_value = 0.28
     mats["Dark"] = m
-    for key, hexv, strength in (("Glow", GLOW_HEX, 1.05), ("Eyes", EYE_HEX, 2.6)):
+    for key, hexv, strength in (("Glow", GLOW_HEX, 0.9), ("Eyes", EYE_HEX, 2.2)):
         m, nt, b = principled("PV_" + key)
         c = (*to_lin(H(hexv)), 1)
         b.inputs["Base Color"].default_value = c
@@ -1506,7 +1588,7 @@ def studio(res_scale=1.0, samples=48):
     node = next(n for n in world.node_tree.nodes if n.type == "BACKGROUND")
     node.inputs[0].default_value = bg
     node.inputs[1].default_value = 1.0
-    for name, energy, rot, ang in (("VF_Key", 2.6, (52, 0, -38), 4), ("VF_Rim", 3.0, (58, 0, 150), 3), ("VF_Fill", 0.6, (70, 0, 60), 20)):
+    for name, energy, rot, ang in (("VF_Key", 2.6, (52, 0, -38), 4), ("VF_Rim", 2.3, (58, 0, 150), 3), ("VF_Fill", 0.5, (70, 0, 60), 20)):
         if name in bpy.data.objects:
             continue
         ld = bpy.data.lights.new(name, "SUN")
@@ -1553,8 +1635,8 @@ def studio(res_scale=1.0, samples=48):
         rl = ng.nodes.new("CompositorNodeRLayers")
         gl = ng.nodes.new("CompositorNodeGlare")
         gl.inputs["Type"].default_value = "Bloom"
-        gl.inputs["Threshold"].default_value = 0.8
-        gl.inputs["Strength"].default_value = 0.55
+        gl.inputs["Threshold"].default_value = 0.95
+        gl.inputs["Strength"].default_value = 0.45
         gl.inputs["Size"].default_value = 0.35
         out = ng.nodes.new("NodeGroupOutput")
         ng.links.new(rl.outputs["Image"], gl.inputs["Image"])
@@ -1626,10 +1708,10 @@ def capsule(loc):
 
 COMPOSE = r'''
 import json, sys
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
 spec = json.load(open(sys.argv[1]))
-def font(sz, bold=False):
-    names = ["/System/Library/Fonts/Supplemental/Didot.ttc", "/System/Library/Fonts/Supplemental/Baskerville.ttc", "/System/Library/Fonts/Helvetica.ttc"]
+def font(sz, title=False):
+    names = (["/System/Library/Fonts/Supplemental/Didot.ttc"] if title else []) + ["/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"]
     for f in names:
         try:
             return ImageFont.truetype(f, sz)
@@ -1641,12 +1723,25 @@ bg = tuple(spec["bg"])
 sheet = Image.new("RGB", (W, Hh), bg)
 d = ImageDraw.Draw(sheet)
 ink = (38, 38, 42)
-d.text((40, 24), spec["title"], fill=ink, font=font(64))
+d.text((40, 24), spec["title"], fill=ink, font=font(64, True))
 d.text((44, 98), spec["subtitle"], fill=(90, 90, 96), font=font(22))
 for t in spec["tiles"]:
     im = Image.open(t["path"]).convert("RGB")
     if t.get("size"):
         im = im.resize(tuple(t["size"]), Image.LANCZOS)
+    if t.get("shadows") is not None:
+        rbg = im.getpixel((1, 1))
+        canvas = Image.new("RGB", im.size, bg)
+        sh = Image.new("L", im.size, 0)
+        ds = ImageDraw.Draw(sh)
+        for (x0, y0, x1, y1, a) in t["shadows"]:
+            ds.ellipse([x0, y0, x1, y1], fill=int(a))
+        sh = sh.filter(ImageFilter.GaussianBlur(max(3, im.width / 90)))
+        canvas = Image.composite(Image.new("RGB", im.size, tuple(int(c * 0.62) for c in bg)), canvas, sh)
+        diff = ImageChops.difference(im, Image.new("RGB", im.size, rbg)).convert("L")
+        mask = diff.point(lambda v: 0 if v < 2 else min(255, v * 60))
+        canvas.paste(im, (0, 0), mask)
+        im = canvas
     sheet.paste(im, tuple(t["at"]))
     if t.get("label"):
         f = font(t.get("fs", 24))
@@ -1676,8 +1771,39 @@ def compose(spec):
     shutil.rmtree(tmp, ignore_errors=True)
 
 
+def ground_shadows(w, h, cap=None):
+    """Screen-space ellipses (px) under the paws, tail tip and capsule for the PIL compositor."""
+    from bpy_extras.object_utils import world_to_camera_view
+    sc = bpy.context.scene
+    cam = sc.camera
+
+    def box(points, alpha):
+        xs, ys = [], []
+        for q in points:
+            c = world_to_camera_view(sc, cam, Vector(q))
+            xs.append(c.x * w)
+            ys.append((1 - c.y) * h)
+        x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+        ry = max((y1 - y0) / 2, h * 0.012)
+        cy = (y0 + y1) / 2
+        return [x0, cy - ry, x1, cy + ry, alpha]
+
+    pts = []
+    for p in PAW.values():
+        for dx, dy in ((-0.45, -0.65), (0.45, -0.65), (-0.45, 0.55), (0.45, 0.55)):
+            pts.append((p.x + dx, p.y + dy, 0.0))
+    out = [box(pts, 120)]
+    if cap is not None and not cap.hide_render:
+        c = cap.location
+        out.append(box([(c.x + dx, c.y + dy, 0.0) for dx, dy in ((-0.85, -0.85), (0.85, -0.85), (-0.85, 0.85), (0.85, 0.85))], 90))
+    return out
+
+
 def render_sheet(meshes, stats, dims, fast=False):
     studio(samples=16 if fast else 48)
+    floor = bpy.data.objects.get("VF_Floor")
+    if floor:
+        floor.hide_render = True
     k = 0.5 if fast else 1.0
     tmp = tempfile.mkdtemp(prefix="vf_sheet_")
     H_ = int(1000 * k)
@@ -1686,35 +1812,36 @@ def render_sheet(meshes, stats, dims, fast=False):
     tiles = []
     cap = capsule((0, 0, 0))
     zc = 2.85
-    # label, target, yaw, pitch, width in studs, capsule position
+    # label, target, yaw, width in studs, capsule position
     views = [
-        ("FRONT VIEW", (0.85, 0, zc), 0, 3, 5.2, (2.55, 0.6, 0)),
-        ("SIDE VIEW", (0, -0.62, zc), 90, 3, 9.7, (0.6, -4.35, 0)),
-        ("BACK VIEW", (-0.85, 0, zc), 180, 3, 5.2, (-2.55, -0.6, 0)),
+        ("FRONT VIEW", (-0.95, 0, zc), 0, 5.4, (-2.75, 1.5, 0)),
+        ("SIDE VIEW", (0, -0.75, zc), 90, 9.9, (-1.5, -4.55, 0)),
+        ("BACK VIEW", (0.95, 0, zc), 180, 5.4, (2.75, -1.5, 0)),
     ]
     x, y0 = 40, 150
-    for label, tgt, yaw, pitch, width_studs, cap_at in views:
+    for label, tgt, yaw, width_studs, cap_at in views:
         cap.location = cap_at
+        cap.hide_render = False
         w = int(round(width_studs / spp))
-        aim(tgt, yaw, pitch, 40, ortho=max(w, H_) * spp)
+        aim(tgt, yaw, 0, 40, ortho=max(w, H_) * spp)
         p = render(os.path.join(tmp, label.split()[0] + ".png"), w, H_)
-        tiles.append(dict(path=p, at=[x, y0], label=label))
-        x += w + 20
-    cap.location = (-2.9, -2.6, 0)
-    aim((-0.2, 0.1, 2.45), -42, 11, 17.5, lens=50)
-    w34 = int(1050 * k)
+        tiles.append(dict(path=p, at=[x, y0], label=label, shadows=ground_shadows(w, H_, cap)))
+        x += w + 40
+    cap.hide_render = True
+    aim((0.35, 0.0, 2.45), -40, 10, 13.5, lens=50)
+    w34 = int(1150 * k)
     p = render(os.path.join(tmp, "Q34.png"), w34, H_)
-    tiles.append(dict(path=p, at=[x, y0], label="3/4 VIEW"))
+    tiles.append(dict(path=p, at=[x, y0], label="3/4 VIEW", shadows=ground_shadows(w34, H_, cap)))
     W = x + w34 + 40
     cap.hide_render = True
 
     dy = y0 + H_ + 90
     dsz = int(430 * k)
     details = [
-        ("HEAD CLOSE-UP", (0, -2.2, 4.3), -8, 4, 3.4),
-        ("GOLD FANGS + SNARL", (0.12, -2.3, 3.95), -78, 3, 2.1),
-        ("PAW DETAIL", (0.67, -1.2, 0.3), -22, 16, 2.6),
-        ("MARKINGS FROM ABOVE", (0, 0.5, 3.2), 180, 60, 17.0),
+        ("HEAD CLOSE-UP", (0, -2.2, 4.3), -14, 3, 3.6),
+        ("GOLD FANGS + SNARL", (0.1, -2.3, 3.95), -72, 2, 2.6),
+        ("PAW DETAIL", (0.68, -1.3, 0.3), -28, 12, 2.6),
+        ("MARKINGS FROM ABOVE", (0, 0.5, 3.0), 180, 58, 11.5),
         ("TAIL TIP GLOW", (0, 3.35, 1.3), 150, 8, 6.2),
     ]
     dx = 40
@@ -1726,7 +1853,7 @@ def render_sheet(meshes, stats, dims, fast=False):
     info_x = dx + 20
     texts = [
         (info_x, dy + 6, "BUILD", 26),
-        (info_x, dy + 46, "Head top %.2f studs, ear tips %.2f" % (dims["head_top"], dims["ear_top"]), 19),
+        (info_x, dy + 46, "Head top %.2f studs (with fur), ear tips %.2f" % (dims["head_top"], dims["ear_top"]), 19),
         (info_x, dy + 72, "Nose to rump %.2f studs" % dims["nose_rump"], 19),
         (info_x, dy + 98, "Overall %.2f L x %.2f W x %.2f H" % (dims["length"], dims["width"], dims["height"]), 19),
     ]
@@ -1765,47 +1892,43 @@ def pose_bones(arm, rotations):
 
 def render_rigtest(arm, fast=False):
     studio(samples=16 if fast else 40)
+    for name in ("VF_Floor", "VF_Capsule"):
+        o = bpy.data.objects.get(name)
+        if o:
+            o.hide_render = True
     k = 0.5 if fast else 1.0
     tmp = tempfile.mkdtemp(prefix="vf_rig_")
-    cap = bpy.data.objects.get("VF_Capsule")
-    if cap:
-        cap.hide_render = True
-    X = (1, 0, 0)
-    Z = (0, 0, 1)
+    X, Y, Z = (1, 0, 0), (0, 1, 0), (0, 0, 1)
     tail = {f"Tail{i}": [(X, 20)] for i in range(1, 5)}
     jaw = {"Jaw": [(X, 25)]}
-    tiles = []
-    sz = int(760 * k)
+    stress = {"Neck": [(X, -25)], "Head": [(Z, 30)], "LegFL1": [(X, 30)], "LegFL2": [(X, -40)], "LegBR1": [(X, -30)], "LegBR2": [(X, 40)],
+              "LegFR1": [(X, -20)], "LegBL1": [(X, 22)], "Spine": [(Y, 0), (Z, 10)], **{f"Tail{i}": [(Z, 18)] for i in range(1, 5)}}
+    sz = int(600 * k)
     panels = [
-        ("REST POSE", {}, ("side",)),
-        ("JAW +25°  ·  TAIL CURL +20° PER BONE", {**jaw, **tail}, ("side",)),
-        ("JAW +25° (close-up)", jaw, ("head",)),
-        ("TAIL +20°/BONE, from behind", tail, ("tail",)),
-        ("STRESS: neck -25°, head yaw 30°, legs ±30°, knees 40°, lids closed, ears 20°",
-         {"Neck": [(X, -25)], "Head": [(Z, 30)], "LegFL1": [(X, 30)], "LegFL2": [(X, -40)], "LegBR1": [(X, -30)], "LegBR2": [(X, 40)],
-          "LegFR1": [(X, -20)], "LegBL1": [(X, 22)], "LidL": [(X, -165)], "LidR": [(X, -165)], "EarL": [((0, 1, 0), -20)],
-          "EarR": [((0, 1, 0), 20)], "Jaw": [(X, 12)], **{f"Tail{i}": [(Z, 18)] for i in range(1, 5)}}, ("q34",)),
-        ("TAIL WAG: yaw 25° per bone (animator axis)", {f"Tail{i}": [(Z, 25)] for i in range(1, 5)}, ("top",)),
+        ("REST POSE", {}, ("side", 9.8, None)),
+        ("JAW +25°, TAIL CURL +20°/BONE", {**jaw, **tail}, ("side", 9.8, None)),
+        ("JAW +25° CLOSE-UP", jaw, ((0, -2.2, 4.1), -60, 6, 5.2)),
+        ("TAIL +20°/BONE FROM BEHIND", tail, ((0, 2.4, 2.2), 125, 12, 12.5)),
+        ("STRESS: NECK -25°, HEAD YAW 30°, LEGS ±30°", stress, ((0.2, 0.2, 2.4), -38, 14, 13.0)),
+        ("SHOULDER + HIP UNDER THE STRESS POSE", stress, ((0.6, 0.6, 1.9), -90, 4, 8.0)),
+        ("LIDS -165° (BLINK), EARS ±20°", {"LidL": [(X, -165)], "LidR": [(X, -165)], "EarL": [(Z, -20)], "EarR": [(Z, 20)]},
+         ((0, -2.2, 4.4), -22, 6, 4.2)),
+        ("TAIL WAG: YAW 25°/BONE (ANIMATOR AXIS)", {f"Tail{i}": [(Z, 25)] for i in range(1, 5)}, ((0, 1.2, 1.6), 160, 55, 13.0)),
     ]
-    for i, (label, rot, (cam,)) in enumerate(panels):
+    tiles = []
+    for i, (label, rot, cam) in enumerate(panels):
         pose_bones(arm, rot)
-        if cam == "side":
-            aim((0, 0.45, 2.7), 90, 3, 40, ortho=7.9)
-        elif cam == "head":
-            aim((0, -2.15, 4.05), -58, 8, 4.2, lens=50)
-        elif cam == "tail":
-            aim((0, 2.6, 2.2), 120, 12, 11, lens=50)
-        elif cam == "q34":
-            aim((0.1, 0.1, 2.4), -40, 14, 17, lens=50)
-        elif cam == "top":
-            aim((0, 1.0, 1.5), 150, 62, 17, lens=50)
+        if cam[0] == "side":
+            aim((0, 1.25, 2.75), 90, 0, 40, ortho=cam[1])
+        else:
+            aim(cam[0], cam[1], cam[2], cam[3], lens=50)
         p = render(os.path.join(tmp, "%02d.png" % i), sz, sz)
-        tiles.append(dict(path=p, at=[40 + (i % 3) * (sz + 24), 150 + (i // 3) * (sz + 60)], label=label, fs=19, frame=True))
+        tiles.append(dict(path=p, at=[40 + (i % 4) * (sz + 20), 150 + (i // 4) * (sz + 56)], label=label, fs=18, frame=True, shadows=[]))
     pose_bones(arm, {})
-    W = 40 + 3 * (sz + 24) + 16
-    Hh = 150 + 2 * (sz + 60) + 20
-    spec = dict(size=[W, Hh], bg=list(int(c * 255) for c in H(BG_HEX)), title="VOID FANG · RIG TEST",
-                subtitle="Bone rotations in root space, converted per bone like CreatureAnimator:set  ·  +X opens the jaw",
+    W = 40 + 4 * (sz + 20) + 20
+    Hh = 150 + 2 * (sz + 56) + 10
+    spec = dict(size=[W, Hh], bg=[int(c * 255) for c in H(BG_HEX)], title="VOID FANG · RIG TEST",
+                subtitle="Rotations are applied in root space and converted per bone exactly like CreatureAnimator:set (basis⁻¹·q·basis). +X opens the jaw.",
                 tiles=tiles, out=RIGTEST)
     compose(spec)
     shutil.rmtree(tmp, ignore_errors=True)
@@ -1875,7 +1998,7 @@ def measure(meshes, body):
             lo = Vector(map(min, lo, v.co))
             hi = Vector(map(max, hi, v.co))
     fur = next(o for o in meshes if o.name.endswith("__Fur"))
-    head_top = float(max(p[2] for p in body.P if p[1] < -1.3))
+    head_top = max(v.co.z for v in fur.data.vertices if abs(v.co.x) < 0.12 and -2.1 < v.co.y < -1.45)
     ear_top = max(v.co.z for v in fur.data.vertices if v.co.y < -1.3)
     nose = min(v.co.y for o in meshes for v in o.data.vertices)
     dt, _ = poly_param_np(body.P, TAIL_PTS)

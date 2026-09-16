@@ -189,6 +189,10 @@ local function petPrompt(model: Model, owner: Player)
 		if ok then
 			Analytics.track("monster_petted", who, { own = who == owner })
 		end
+		if who == owner then
+			PlayerDataService.stat(owner, "pets")
+			require(script.Parent.GameEvents).fire(owner, "pet", {})
+		end
 	end)
 end
 
@@ -278,6 +282,21 @@ function CreatureService.despawn(player: Player)
 	active[player.UserId] = nil
 end
 
+-- Take over movement for a scripted walk (parade runway, cutscenes). nil gives it back.
+--   { from = Vector3, to = Vector3, duration = s, startedAt = os.clock(),
+--     pauseAt = 0..1?, pauseFor = s?, action = "celebrate"? }
+function CreatureService.setOverride(player: Player, override)
+	local state = active[player.UserId]
+	if state then
+		state.override = override
+		if override then
+			state.overridePosed = false
+			state.mood = nil
+			state.model:SetAttribute("Mood", nil)
+		end
+	end
+end
+
 function CreatureService.setMood(player: Player, mood: string?, seconds: number?)
 	local state = active[player.UserId]
 	if state then
@@ -311,6 +330,34 @@ local function step(dt: number)
 		local F = state.follow
 		local pos = root.Position
 		local target = pos
+
+		-- ── scripted walk (parade) ──────────────────────────────────────────
+		local ov = state.override
+		if ov then
+			local elapsed = now - ov.startedAt
+			local walkTime = ov.duration - (ov.pauseFor or 0)
+			local t
+			if ov.pauseAt and elapsed > ov.pauseAt * walkTime and elapsed < ov.pauseAt * walkTime + (ov.pauseFor or 0) then
+				t = ov.pauseAt
+				if not state.overridePosed and ov.action then
+					state.overridePosed = true
+					CreatureService.action(model, ov.action)
+				end
+			else
+				local walked = elapsed
+				if ov.pauseAt and elapsed >= ov.pauseAt * walkTime + (ov.pauseFor or 0) then
+					walked -= (ov.pauseFor or 0)
+				end
+				t = math.clamp(walked / walkTime, 0, 1)
+			end
+			local p = ov.from:Lerp(ov.to, t)
+			local dir = flat(ov.to - ov.from)
+			state.heading = dir.Magnitude > 0.01 and dir.Unit or state.heading
+			local gy = CreatureService.groundAt(p.X, p.Z, p.Y + 5)
+			local y = gy + state.groundOffset
+			root.CFrame = CFrame.lookAt(Vector3.new(p.X, y, p.Z), Vector3.new(p.X, y, p.Z) + state.heading)
+			continue
+		end
 
 		-- owner stillness drives lazy/sleep behaviour
 		if hrp then

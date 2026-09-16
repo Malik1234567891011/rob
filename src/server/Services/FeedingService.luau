@@ -34,6 +34,28 @@ local pendingRebuild: { [number]: number } = {}
 local pendingReveal: { [number]: boolean } = {}
 
 local CreatureService -- resolved lazily to avoid a require cycle
+local GameEvents = require(script.Parent.GameEvents)
+
+-- Multiplier from DailyService (trait of the day, weather, night) and EventService (storm,
+-- full moon). Resolved lazily; 1 when those services are not running (tests).
+function FeedingService.worldMultiplier(trait: string): number
+	local m = 1
+	local okD, Daily = pcall(require, script.Parent.DailyService)
+	if okD and Daily.influenceMultiplier then
+		local ok, v = pcall(Daily.influenceMultiplier, trait)
+		if ok and type(v) == "number" then
+			m *= v
+		end
+	end
+	local okE, Events = pcall(require, script.Parent.EventService)
+	if okE and Events.boost then
+		local ok, v = pcall(Events.boost, trait)
+		if ok and type(v) == "number" then
+			m *= v
+		end
+	end
+	return m
+end
 
 local function visibleTraits(genome)
 	local out = {}
@@ -65,7 +87,8 @@ function FeedingService.applyInfluence(genome, ingredientId: string)
 
 	genome.traits = genome.traits or {}
 	for trait, amount in pairs(def.influences) do
-		genome.traits[trait] = (genome.traits[trait] or 0) + amount * gain
+		-- today's trait bonus, the weather and live events change what food does (SPEC §47, §54)
+		genome.traits[trait] = (genome.traits[trait] or 0) + amount * gain * FeedingService.worldMultiplier(trait)
 	end
 
 	-- layer 1: recent window
@@ -159,7 +182,8 @@ function FeedingService.feed(player: Player, ingredientId: string)
 	end
 
 	DiscoveryService.recordEaten(ingredientId)
-	DiscoveryService.ingredient(player, ingredientId)
+	local firstTime = DiscoveryService.ingredient(player, ingredientId)
+	GameEvents.fire(player, "fed", { ingredient = ingredientId, new = firstTime, fedCount = genome.fedCount })
 
 	AnalyticsService.track("ingredient_feed", player, {
 		ingredient = ingredientId, rarity = def.rarity, fed_count = genome.fedCount,
@@ -183,12 +207,15 @@ function FeedingService.feed(player: Player, ingredientId: string)
 	})
 
 	for _, traitId in ipairs(report.newTraits) do
-		if DiscoveryService.trait(player, traitId) and profile.stats.feeds <= 3 then
+		local brandNew = DiscoveryService.trait(player, traitId)
+		if brandNew and profile.stats.feeds <= 3 then
 			AnalyticsService.track("ftue_first_trait", player, { trait = traitId })
 		end
+		GameEvents.fire(player, "trait_new", { trait = traitId, new = brandNew })
 	end
 	for _, mutationId in ipairs(report.newMutations) do
 		DiscoveryService.mutation(player, mutationId)
+		GameEvents.fire(player, "mutation_new", { mutation = mutationId })
 	end
 
 	-- The body change lands AFTER the swallow (ART_DIRECTION feeding beat: chomp -> cheeks
@@ -246,6 +273,8 @@ function FeedingService.evolve(player: Player)
 	end
 
 	PlayerDataService.addCurrency(player, Economy.rewards.stageEvolution)
+	PlayerDataService.stat(player, "evolutions")
+	GameEvents.fire(player, "evolved", { stage = genome.stage })
 	AnalyticsService.track("trait_progress", player, { stage = genome.stage })
 	if genome.stage == 2 then
 		AnalyticsService.track("ftue_first_evolution", player, {})
@@ -264,6 +293,7 @@ function FeedingService.evolve(player: Player)
 	})
 	for _, mutationId in ipairs(gained) do
 		DiscoveryService.mutation(player, mutationId)
+		GameEvents.fire(player, "mutation_new", { mutation = mutationId })
 	end
 
 	PlayerDataService.sync(player)

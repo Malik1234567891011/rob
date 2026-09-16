@@ -30,6 +30,16 @@ local WorldService = require(Services:WaitForChild("WorldService"))
 local FtueService = require(Services:WaitForChild("FtueService"))
 local OfflineService = require(Services:WaitForChild("OfflineService"))
 local LineageService = require(Services:WaitForChild("LineageService"))
+local DailyService = require(Services:WaitForChild("DailyService"))
+local QuestService = require(Services:WaitForChild("QuestService"))
+local SanctuaryService = require(Services:WaitForChild("SanctuaryService"))
+local TrialService = require(Services:WaitForChild("TrialService"))
+local ParadeService = require(Services:WaitForChild("ParadeService"))
+local EventService = require(Services:WaitForChild("EventService"))
+local PartyService = require(Services:WaitForChild("PartyService"))
+local GlobalService = require(Services:WaitForChild("GlobalService"))
+local MonetizationService = require(Services:WaitForChild("MonetizationService"))
+local GameEvents = require(Services:WaitForChild("GameEvents"))
 
 -- ═══ REMOTE HANDLERS ═════════════════════════════════════════════════════════
 
@@ -94,6 +104,7 @@ Net.func("NameCreature").OnServerInvoke = function(player, requested)
 
 	genome.name = safe
 	AnalyticsService.track("monster_named", player, {})
+	GameEvents.fire(player, "named", {})
 	CreatureService.refresh(player, false)
 	PlayerDataService.sync(player)
 	return { ok = true, name = safe }
@@ -140,12 +151,43 @@ end
 
 -- ═══ START ═══════════════════════════════════════════════════════════════════
 
+Net.func("MerchantBuy").OnServerInvoke = function(player, ingredientId)
+	if type(ingredientId) ~= "string" then
+		return { ok = false }
+	end
+	return DailyService.buy(player, ingredientId)
+end
+
+Net.func("SetSetting").OnServerInvoke = function(player, key, value)
+	local profile = PlayerDataService.get(player)
+	if not profile or type(key) ~= "string" or (key ~= "music" and key ~= "sfx") then
+		return { ok = false }
+	end
+	profile.settings[key] = value == true
+	PlayerDataService.markDirty(player)
+	return { ok = true }
+end
+
+-- ═══ START ORDER ═════════════════════════════════════════════════════════════
+-- WorldState (DailyService) must exist before Parade/Events/Global publish to it; Sanctuary
+-- must assign plots before the FTUE places eggs.
+
 WorldService.start()
+DailyService.start()
 PlayerDataService.start()
 AnalyticsService.start()
 CreatureService.start()
+SanctuaryService.start()
 FtueService.start()
 OfflineService.start()
+LineageService.start()
+QuestService.start()
+GlobalService.start()
+TrialService.start()
+ParadeService.start()
+EventService.start()
+PartyService.start()
+MonetizationService.start()
 
 require(Services:WaitForChild("DevHooks")).start({
 	PlayerDataService = PlayerDataService,
@@ -157,6 +199,16 @@ require(Services:WaitForChild("DevHooks")).start({
 	FtueService = FtueService,
 	OfflineService = OfflineService,
 	LineageService = LineageService,
+	DailyService = DailyService,
+	QuestService = QuestService,
+	SanctuaryService = SanctuaryService,
+	TrialService = TrialService,
+	ParadeService = ParadeService,
+	EventService = EventService,
+	PartyService = PartyService,
+	GlobalService = GlobalService,
+	MonetizationService = MonetizationService,
+	GameEvents = GameEvents,
 })
 
 print(string.format(

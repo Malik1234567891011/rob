@@ -96,7 +96,10 @@ end
 local function spawnEggs(player: Player)
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
-	local base = hrp and hrp.Position or Vector3.new(0, 3, 26)
+	-- eggs sit in the player's own backyard (their Sanctuary plot), right in front of them
+	local SanctuaryService = require(script.Parent.SanctuaryService)
+	local eggCF = SanctuaryService.eggCF(player)
+	local base = eggCF and (eggCF.Position + Vector3.new(0, 1.2, 9)) or (hrp and hrp.Position) or Vector3.new(0, 3, 26)
 
 	local set = Instance.new("Folder")
 	set.Name = "Eggs_" .. player.Name

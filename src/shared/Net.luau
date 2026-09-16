@@ -19,6 +19,12 @@ Net.EVENTS = {
 	"CreatureAction",  -- (creatureId, action) one-shot animation, broadcast to everyone
 	"WorldNotice",     -- gate opened, world event
 	"OfflineReport",   -- "WHILE YOU WERE GONE..."
+	"TrialState",      -- trial lobby / run / results for participants
+	"TrialFx",         -- hits, breaks, chests, finishes (everyone sees)
+	"ParadeReaction",  -- a live 😂😍😱🤯 reaction to the monster on the runway
+	"PartyState",      -- your party roster
+	"PartyInvite",     -- someone invited you
+	"Moment",          -- a shareable moment just happened (SPEC §39)
 }
 
 -- client -> server requests
@@ -32,6 +38,21 @@ Net.FUNCTIONS = {
 	"CreateLineage",
 	"Inspect",
 	"SetDetailMode",
+	"TrialJoin",
+	"TrialLeave",
+	"ParadeJoin",
+	"ParadeVote",
+	"SanctuaryUpgrade",
+	"SanctuaryDecor",
+	"GardenPlant",
+	"MerchantBuy",
+	"ShopPrompt",
+	"PartyInviteSend",
+	"PartyAccept",
+	"PartyLeave",
+	"SwitchCreature",
+	"NewEgg",
+	"SetSetting",
 }
 
 local folderName = "Net"

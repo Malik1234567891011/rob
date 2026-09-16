@@ -89,6 +89,51 @@ Mutations.all = {
 		hint = "Stone. Lots of stone.",
 	},
 
+
+	-- Stage-2 unlocks for the remaining abilities, so every one of the eleven has an
+	-- ordinary (non-secret) route. SPEC §11: abilities change where you can go.
+	Gills = {
+		display = "Gills", emoji = "🫧", rarity = "Uncommon", stage = 2,
+		requirements = { Water = 24, Flexible = 8 },
+		parts = { Back = "Fins", Tail = "FishTail" }, ability = "Aquatic",
+		tintSecondary = 0x3FA9F5,
+		hint = "Wet things, and something bendy.",
+	},
+	Emberhide = {
+		display = "Emberhide", emoji = "🔥", rarity = "Uncommon", stage = 2,
+		requirements = { Fire = 24, Stone = 10 },
+		parts = { Back = "Spikes" }, ability = "Heatproof",
+		tintSecondary = 0xFF7A2F, glow = 0.35,
+		hint = "Hot rocks. Lots of hot rocks.",
+	},
+	Gumfoot = {
+		display = "Gumfoot", emoji = "🍬", rarity = "Uncommon", stage = 2,
+		requirements = { Slimy = 22, Sweet = 10 },
+		parts = { Legs = "Chunky" }, ability = "Sticky",
+		tintSecondary = 0x7FE3A8,
+		hint = "Sticky and sweet. Its feet cling now.",
+	},
+	Wisp = {
+		display = "Wisp", emoji = "👻", rarity = "Uncommon", stage = 2,
+		requirements = { Mystic = 20, Night = 12 },
+		parts = { Eyes = "Glow" }, ability = "Ghost",
+		tintSecondary = 0xC7B8FF, glow = 0.5,
+		hint = "Mysterious things, after dark.",
+	},
+	Overgrown = {
+		display = "Overgrown", emoji = "🌱", rarity = "Uncommon", stage = 2,
+		requirements = { Nature = 30, Water = 8 },
+		parts = { Horn = "Nub", Tail = "Fluffy" }, ability = "Plant",
+		tintSecondary = 0x5FBF52,
+		hint = "Plants, and something to water them.",
+	},
+	BalloonBelly = {
+		display = "Balloon Belly", emoji = "🎈", rarity = "Uncommon", stage = 2,
+		requirements = { Air = 18, Round = 20 }, blockers = { Heavy = 25 },
+		parts = { Legs = "Stubby" }, ability = "Glide", sizeMul = 1.15,
+		hint = "Round and airy. Keep it light.",
+	},
+
 	-- ── Tier 2: stage 3, the shareable ones. ────────────────────────────────
 	Stormwing = {
 		display = "Stormwing", emoji = "🪽", rarity = "Rare", stage = 3,
@@ -168,6 +213,51 @@ Mutations.all = {
 		hint = "Keep it cold.",
 	},
 
+
+	-- ── Launch secrets (SPEC §26, §77: "there are N undiscovered mutations") ─
+	StaticFrog = {
+		display = "Static Frog", emoji = "🐸", rarity = "Exotic", stage = 3,
+		requirements = { Electric = 40, Water = 40, Silly = 15 },
+		parts = { Eyes = "Big", Mouth = "Gaping", Legs = "Long" },
+		ability = "Electric", tintPrimary = 0x7FD35A, tintSecondary = 0xFFD52E, glow = 0.45,
+		secret = true, hint = "Wet, electric, and deeply silly.",
+	},
+	CupcakeGolem = {
+		display = "Cupcake Golem", emoji = "🧁", rarity = "Exotic", stage = 3,
+		requirements = { Sweet = 60, Heavy = 35 },
+		parts = { Head = "Blocky", Legs = "Chunky", Horn = "Crown" },
+		ability = "Giant", tintPrimary = 0xFF9EC4, tintSecondary = 0xFFF1D6, sizeMul = 1.3,
+		secret = true, hint = "Dessert, but make it structural.",
+	},
+	SockPuppet = {
+		display = "Sock Puppet", emoji = "🧦", rarity = "Exotic", stage = 3,
+		requirements = { Silly = 45, Toy = 35, Flexible = 20 },
+		parts = { Eyes = "Dot", Mouth = "Gaping", Ears = "Floppy", Legs = "Noodle" },
+		ability = "Tiny", tintPrimary = 0xE85D75, sizeMul = 0.8,
+		secret = true, hint = "What happens to all the lost socks?",
+	},
+	Alien = {
+		display = "Visitor", emoji = "👽", rarity = "Exotic", stage = 3,
+		requirements = { Mystic = 30, Slimy = 25, Celestial = 20 },
+		parts = { Head = "Bulb", Eyes = "Many", Ears = "Antenna" },
+		ability = "Light", tintPrimary = 0xA6FF4D, glow = 0.8,
+		secret = true, hint = "It came from the sky. So did its dinner.",
+	},
+	Abyssal = {
+		display = "Abyssal", emoji = "🦑", rarity = "Exotic", stage = 4,
+		requirements = { Water = 70, Dark = 45, Ancient = 25 },
+		parts = { Eyes = "Many", Mouth = "Fangs", Tail = "FishTail", Back = "Fins" },
+		ability = "Aquatic", tintPrimary = 0x1B2A4A, tintSecondary = 0x45E0FF, glow = 0.6,
+		secret = true, hint = "Something is in the ocean. Something old.",
+	},
+	GeodeHeart = {
+		display = "Geode Heart", emoji = "💎", rarity = "Exotic", stage = 4,
+		requirements = { Crystal = 70, Stone = 50, Ancient = 20 },
+		parts = { Horn = "Crystal", Back = "Spikes", Legs = "Chunky" },
+		ability = "Burrow", tintSecondary = 0xB07CFF, glow = 0.7, sizeMul = 1.2,
+		secret = true, hint = "Rocks, crystals, and patience.",
+	},
+
 	-- ── Tier 3: stage 4+, spectacle. SPEC §14 Giant / Mythic. ───────────────
 	Monarch = {
 		display = "Monarch", emoji = "👑", rarity = "Exotic", stage = 4,
@@ -196,8 +286,10 @@ Mutations.all = {
 Mutations.order = {
 	"Sprout","Spark","Spore","Squeaky","Pebbled","Damp",
 	"Gigantism","Miniature","LiveWire","Glowworm","Featherlight","Burrower",
+	"Gills","Emberhide","Gumfoot","Wisp","Overgrown","BalloonBelly",
 	"Stormwing","LavaSnail","TVHead","MoonBeast","StaticBloom","Scrapheart",
 	"Cursed","Deepling","Fossilised","Gummy","Frostbitten",
+	"StaticFrog","CupcakeGolem","SockPuppet","Alien","Abyssal","GeodeHeart",
 	"Monarch","VoidMoth","Everything",
 }
 
@@ -216,8 +308,8 @@ Mutations.abilities = {
 	Sticky    = { display = "Sticky",    emoji = "🕷️", desc = "Climb sheer walls." },
 }
 
--- Wired to real world gates in this build (SPEC §60 asks for 5).
-Mutations.activeAbilities = { "Giant", "Tiny", "Electric", "Glide", "Light" }
+-- Every ability is wired to real world gates (SPEC §11; §60 asked for 5, the full game has all 11).
+Mutations.activeAbilities = { "Giant", "Tiny", "Electric", "Glide", "Light", "Burrow", "Aquatic", "Heatproof", "Ghost", "Plant", "Sticky" }
 
 function Mutations.get(id: string)
 	return Mutations.all[id]

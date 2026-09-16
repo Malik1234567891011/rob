@@ -112,3 +112,27 @@ These are all cases where "it compiles" or "no errors" would have been wrong:
 - **The aspiration creature is an NPC.** SPEC §8 (0:50) wants "a massive player monster"
   walking past. On an empty server there is no such player, so `WorldService` stages one
   that patrols the horizon. No popup, no text — exactly as specified.
+
+---
+
+## Blender → Roblox mesh pipeline (SOLVED 2026-09-16)
+
+The "unsolved blocker" in ART_DIRECTION.md is solved. What was tried, in order:
+
+| Path | Result |
+|---|---|
+| `AssetService:CreateAssetAsync` from the MCP (Studio uploads with its own login) | ❌ `CreateAssetAsync and CreateAssetVersionAsync are not available yet` |
+| Runtime `EditableMesh` rebuilt from embedded vertex data | ⚠️ works in Studio (bone APIs exist too) but **a published game needs the owner 13+ age- AND ID-verified**, and EditableMesh does not replicate. Too fragile to hang the creature on. |
+| **FBX → Open Cloud Assets API → `insert_asset`** | ✅ **the pipeline** |
+
+`tools/rbx_upload.py` uploads with the key in `secrets/roblox_api_key.txt` (gitignored;
+account **malikRania4L / 10958960090**, the same account Studio is logged into — assets
+owned by a different account will not insert). It keeps a sha ledger in
+`art/build/uploads.json` so unchanged files are never re-uploaded.
+
+Verified on a probe tail (asset 95511196423061):
+- `MeshPart.HasSkinnedMesh = true`, bone chain imported as nested `Bone` instances
+- **1 Blender metre = 1 stud** with `apply_scale_options='FBX_SCALE_ALL'`
+- rotating `Bone.CFrame` bends the mesh continuously — real skinning, no ball joints
+- insert comes in as a **Package** (`PackageLink`) plus an `InitialPoses` folder — strip both
+  when storing templates

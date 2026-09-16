@@ -21,3 +21,6 @@ sourcemap.json
 *.log
 tools/__pycache__/
 .manifest.json
+art/build/*.fbx
+art/build/*.png
+art/build/sync.rbxmx

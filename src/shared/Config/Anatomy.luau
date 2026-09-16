@@ -2,21 +2,20 @@
 -- Shared.Config.Anatomy — SPEC §4 (combinatorial creature system), §73 (modular kits).
 --
 -- We are NOT making 300 monsters. We make parts that recombine.
--- 3 bodies x 4 heads x 6 eyes x 4 mouths x 5 ears x 6 horns x 7 backs x 6 tails x 4 legs
---   = ~1.45M silhouettes before colour, pattern, size and mutation overlays.
 --
--- A part variant is a list of PIECES the builder instantiates from primitives:
---   shape     : Ball | Block | Cylinder | Wedge
---   size      : {x,y,z} in body-relative units (scaled by creature size)
---   offset    : body slots -> fraction of the torso's PER-AXIS half-extent
---                (1.0 == exactly on the surface). head slots -> multiples of headUnit.
---   rot       : {rx,ry,rz} degrees
---   colorMode : "primary" | "secondary" | "trait" | <hex number>
---   material  : Roblox material name (default SmoothPlastic)
---   mirror    : duplicate the whole variant mirrored across X
+-- Every variant below is a set of Blender-authored skinned meshes living in
+-- ReplicatedStorage.Assets.Creatures.<Family>.Parts, named "<Slot>__<Variant>__<Piece>".
+-- Head variants are whole bodies (Assets.Creatures.<Family>.Bodies.<Head>) because the head
+-- is sculpted INTO the body — no neck seam. See tools/blender/creatures.py.
 --
--- SPEC §91 guard: `banned` lists variants that must never coexist, so the
--- generator produces "deliberately ridiculous", never "broken generator".
+-- Parts bind to the body's bones BY NAME once welded into its assembly
+-- (docs/DECISIONS.md), so a part authored once works on every head of its family.
+--
+-- ART_DIRECTION "morph, don't accumulate": a slot holds exactly one variant. A mutation
+-- that goes aquatic REPLACES the tail; it never stacks a fin on top of the old one.
+--
+-- SPEC §91 guard: `banned` lists variants that must never coexist, so the generator
+-- produces "deliberately ridiculous", never "broken generator".
 
 local Anatomy = {}
 
@@ -24,198 +23,158 @@ local Anatomy = {}
 Anatomy.bodies = {
 	Cute = {
 		display = "Cute",
-		torso = { shape = "Ball", size = { 2.3, 2.1, 2.7 } },
-		headScale = 1.20, headForward = 1.00, headLift = 0.75,
-		legLength = 0.85, legSpread = 0.62,
-		baseColor = 0xFFC9D6,
+		baseColor = 0xFFB3C6,
+		bellyLift = 0.16, -- how much lighter the belly reads than the primary colour
 		-- biases fed into temperament generation (SPEC §18)
 		temperament = { affectionate = 0.35, curious = 0.25, silly = 0.15 },
 		affinity = { Sweet = 1.2, Nature = 1.1, Toy = 1.1 },
+		followScale = 1.0,
 	},
 	Heavy = {
 		display = "Heavy",
-		torso = { shape = "Block", size = { 3.1, 2.4, 3.6 } },
-		headScale = 0.92, headForward = 1.02, headLift = 0.45,
-		legLength = 1.15, legSpread = 0.86,
-		baseColor = 0x8C8478,
+		baseColor = 0x9AA6B2,
+		bellyLift = 0.12,
 		temperament = { lazy = 0.3, brave = 0.3, greedy = 0.2 },
 		affinity = { Stone = 1.25, Metal = 1.2, Heavy = 1.3 },
+		followScale = 1.2,
 	},
 	Weird = {
 		display = "Weird",
-		torso = { shape = "Ball", size = { 2.0, 2.8, 2.2 } },
-		headScale = 1.05, headForward = 0.98, headLift = 1.35,
-		legLength = 1.45, legSpread = 0.48,
-		baseColor = 0xA77BFF,
+		baseColor = 0xB597FF,
+		bellyLift = 0.14,
 		temperament = { mischievous = 0.3, curious = 0.3, nervous = 0.2 },
 		affinity = { Mystic = 1.3, Fungal = 1.2, Dark = 1.2 },
+		followScale = 1.05,
 	},
 }
 Anatomy.bodyOrder = { "Cute", "Heavy", "Weird" }
 
 -- ═══ PARTS ═══════════════════════════════════════════════════════════════════
+-- `style` overrides piece colour/material for this variant only (keys are piece-name
+-- prefixes, eg. Pupil matches PupilL and PupilR).
 Anatomy.parts = {
 
 	Head = {
-		Round   = { display = "Round Head",  pieces = { { shape = "Ball",     size = {1.0,1.0,1.0},   offset = {0,0,0}, colorMode = "primary" } } },
-		Blocky  = { display = "Blocky Head", pieces = { { shape = "Block",    size = {0.95,0.95,1.0}, offset = {0,0,0}, colorMode = "primary" } } },
-		Snouted = { display = "Snouted",     pieces = {
-			{ shape = "Ball",  size = {1.0,1.0,1.0},    offset = {0,0,0},          colorMode = "primary" },
-			{ shape = "Ball",  size = {0.55,0.45,0.6},  offset = {0,-0.18,-0.62},  colorMode = "secondary" } } },
-		Bulb    = { display = "Bulbous",     pieces = {
-			{ shape = "Ball",  size = {1.15,0.9,1.05},  offset = {0,0.05,0},       colorMode = "primary" },
-			{ shape = "Ball",  size = {0.5,0.5,0.5},    offset = {0,0.62,0},       colorMode = "secondary" } } },
+		Round   = { display = "Round Head" },
+		Blocky  = { display = "Blocky Head" },
+		Snouted = { display = "Snouted" },
+		Bulb    = { display = "Bulbous" },
 	},
 
 	Eyes = {
-		Dot     = { display = "Dot Eyes",    mirror = true, pieces = {
-			{ shape = "Ball", size = {0.22,0.22,0.16}, offset = {0.28,0.12,-0.46}, colorMode = 0x1A1A1A } } },
-		Big     = { display = "Big Eyes",    mirror = true, pieces = {
-			{ shape = "Ball", size = {0.46,0.5,0.3},   offset = {0.27,0.12,-0.42}, colorMode = 0xFFFFFF },
-			{ shape = "Ball", size = {0.24,0.26,0.2},  offset = {0.27,0.10,-0.52}, colorMode = 0x1A1A1A } } },
-		Sleepy  = { display = "Sleepy Eyes", mirror = true, pieces = {
-			{ shape = "Block", size = {0.36,0.07,0.16}, offset = {0.27,0.14,-0.47}, colorMode = 0x1A1A1A } } },
-		Glow    = { display = "Glowing Eyes", mirror = true, pieces = {
-			{ shape = "Ball", size = {0.3,0.34,0.22}, offset = {0.27,0.13,-0.45}, colorMode = "trait", material = "Neon" } } },
-		Many    = { display = "Too Many Eyes", pieces = {
-			{ shape = "Ball", size = {0.3,0.32,0.2},  offset = {0.28,0.16,-0.44}, colorMode = 0xFFFFFF },
-			{ shape = "Ball", size = {0.3,0.32,0.2},  offset = {-0.28,0.16,-0.44},colorMode = 0xFFFFFF },
-			{ shape = "Ball", size = {0.22,0.24,0.16},offset = {0,0.44,-0.42},    colorMode = 0xFFFFFF },
-			{ shape = "Ball", size = {0.2,0.2,0.14},  offset = {0.44,-0.14,-0.36},colorMode = 0xFFFFFF },
-			{ shape = "Ball", size = {0.2,0.2,0.14},  offset = {-0.44,-0.14,-0.36},colorMode = 0xFFFFFF } } },
-		Screen  = { display = "Screen Face", pieces = {
-			{ shape = "Block", size = {0.78,0.6,0.1}, offset = {0,0.1,-0.5},  colorMode = 0x8FD6FF, material = "Neon" },
-			{ shape = "Block", size = {0.84,0.66,0.08},offset = {0,0.1,-0.46},colorMode = 0x3A3A3A } } },
+		Dot     = { display = "Dot Eyes" },
+		Big     = { display = "Big Eyes" },
+		Sleepy  = { display = "Sleepy Eyes" },
+		Glow    = { display = "Glowing Eyes", style = { Pupil = { color = "trait", material = "Neon" } } },
+		Many    = { display = "Too Many Eyes" },
+		Screen  = { display = "Screen Face", style = { Screen = { color = 0x8FD6FF, material = "Neon" }, Bezel = { color = 0x3A3A40, material = "SmoothPlastic", skin = false } } },
 	},
 
 	Mouth = {
-		Smile  = { display = "Smile",     pieces = { { shape = "Block", size = {0.42,0.08,0.1}, offset = {0,-0.28,-0.48}, colorMode = 0x2A1A1A } } },
-		Fangs  = { display = "Fangs",     pieces = {
-			{ shape = "Block", size = {0.46,0.1,0.1},  offset = {0,-0.28,-0.48}, colorMode = 0x2A1A1A },
-			{ shape = "Wedge", size = {0.1,0.18,0.1},  offset = {0.14,-0.36,-0.5}, colorMode = 0xFFFFFF },
-			{ shape = "Wedge", size = {0.1,0.18,0.1},  offset = {-0.14,-0.36,-0.5},colorMode = 0xFFFFFF } } },
-		Beak   = { display = "Beak",      pieces = { { shape = "Wedge", size = {0.3,0.26,0.5}, offset = {0,-0.22,-0.66}, rot = {0,180,0}, colorMode = 0xE8A81F } } },
-		Gaping = { display = "Gaping Maw", pieces = {
-			{ shape = "Ball",  size = {0.6,0.4,0.28}, offset = {0,-0.26,-0.46}, colorMode = 0x1A0E12 },
-			{ shape = "Wedge", size = {0.08,0.2,0.08},offset = {0.2,-0.14,-0.56}, colorMode = 0xFFFFFF },
-			{ shape = "Wedge", size = {0.08,0.2,0.08},offset = {-0.2,-0.14,-0.56},colorMode = 0xFFFFFF } } },
+		Smile  = { display = "Smile" },
+		Fangs  = { display = "Fangs" },
+		Beak   = { display = "Beak", style = { Beak = { color = 0xF2A93B, skin = false } } },
+		Gaping = { display = "Gaping Maw" },
 	},
 
 	Ears = {
-		None    = { display = "No Ears", pieces = {} },
-		Round   = { display = "Round Ears",  mirror = true, pieces = {
-			{ shape = "Ball", size = {0.42,0.44,0.22}, offset = {0.46,0.42,0.02}, colorMode = "primary" } } },
-		Floppy  = { display = "Floppy Ears", mirror = true, pieces = {
-			{ shape = "Block", size = {0.2,0.62,0.34}, offset = {0.5,0.18,0.02}, rot = {0,0,18}, colorMode = "secondary" } } },
-		Pointy  = { display = "Pointy Ears", mirror = true, pieces = {
-			{ shape = "Wedge", size = {0.2,0.6,0.26}, offset = {0.42,0.6,0.05}, rot = {0,0,-12}, colorMode = "primary" } } },
-		Antenna = { display = "Antennae",    mirror = true, pieces = {
-			{ shape = "Cylinder", size = {0.07,0.7,0.07}, offset = {0.22,0.72,0}, rot = {0,0,-16}, colorMode = "secondary" },
-			{ shape = "Ball",     size = {0.2,0.2,0.2},   offset = {0.32,1.06,0}, colorMode = "trait", material = "Neon" } } },
+		None    = { display = "No Ears" },
+		Round   = { display = "Round Ears" },
+		Floppy  = { display = "Floppy Ears" },
+		Pointy  = { display = "Pointy Ears" },
+		Antenna = { display = "Antennae", style = { Bulb = { color = "trait", material = "Neon" }, Stalk = { color = "secondary" } } },
 	},
 
 	Horn = {
-		None     = { display = "No Horns", pieces = {} },
-		Nub      = { display = "Little Nubs", mirror = true, pieces = {
-			{ shape = "Ball", size = {0.22,0.26,0.22}, offset = {0.24,0.62,-0.1}, colorMode = "secondary" } } },
-		Curved   = { display = "Curved Horns", mirror = true, pieces = {
-			{ shape = "Cylinder", size = {0.16,0.5,0.16}, offset = {0.28,0.7,-0.05}, rot = {0,0,-22}, colorMode = "secondary" },
-			{ shape = "Cylinder", size = {0.12,0.4,0.12}, offset = {0.46,1.0,-0.05}, rot = {0,0,-52}, colorMode = "secondary" } } },
-		Crystal  = { display = "Crystal Antlers", mirror = true, pieces = {
-			{ shape = "Wedge", size = {0.14,0.62,0.14}, offset = {0.26,0.78,-0.06}, rot = {0,0,-14}, colorMode = "trait", material = "Glass" },
-			{ shape = "Wedge", size = {0.1,0.42,0.1},   offset = {0.44,1.12,-0.12}, rot = {0,0,-40}, colorMode = "trait", material = "Glass" },
-			{ shape = "Wedge", size = {0.1,0.38,0.1},   offset = {0.16,1.14,0.1},   rot = {0,0,12},  colorMode = "trait", material = "Glass" } } },
-		Single   = { display = "Unicorn Horn", pieces = {
-			{ shape = "Wedge", size = {0.18,0.86,0.18}, offset = {0,0.74,-0.2}, colorMode = "trait", material = "Glass" } } },
-		Crown    = { display = "Tiny Crown", pieces = {
-			{ shape = "Cylinder", size = {0.52,0.14,0.52}, offset = {0,0.66,0}, colorMode = 0xFFD52E, material = "Metal" },
-			{ shape = "Wedge", size = {0.1,0.22,0.1}, offset = {0.2,0.8,0},  colorMode = 0xFFD52E, material = "Metal" },
-			{ shape = "Wedge", size = {0.1,0.22,0.1}, offset = {-0.2,0.8,0}, colorMode = 0xFFD52E, material = "Metal" },
-			{ shape = "Wedge", size = {0.1,0.26,0.1}, offset = {0,0.82,-0.2},colorMode = 0xFFD52E, material = "Metal" } } },
+		None     = { display = "No Horns" },
+		Nub      = { display = "Leaf Sprout", style = { Leaf = { color = 0x6CC24A, skin = false }, Stem = { color = 0x4E8F38, skin = false } } },
+		Curved   = { display = "Curved Horns", style = { Horn = { color = 0xEFE3CC, skin = false } } },
+		Crystal  = { display = "Crystal Antlers", style = { Crystal = { color = "trait", material = "Glass", transparency = 0.15 } } },
+		Single   = { display = "Unicorn Horn", style = { Horn = { color = "trait", material = "Glass", transparency = 0.1 } } },
+		Crown    = { display = "Tiny Crown", style = { Crown = { color = 0xFFCF3A, material = "Foil", skin = false }, Gem = { color = 0xE0305A, material = "Glass", skin = false } } },
 	},
 
 	Back = {
-		None     = { display = "Bare Back", pieces = {} },
-		Spikes   = { display = "Spines", pieces = {
-			{ shape = "Wedge", size = {0.18,0.46,0.3}, offset = {0,1.15,0.38},  colorMode = "secondary" },
-			{ shape = "Wedge", size = {0.2,0.56,0.32}, offset = {0,1.22,-0.05}, colorMode = "secondary" },
-			{ shape = "Wedge", size = {0.16,0.4,0.28}, offset = {0,1.08,-0.48}, colorMode = "secondary" } } },
-		Shell    = { display = "Shell", pieces = {
-			{ shape = "Ball", size = {1.5,0.9,1.7}, offset = {0,0.9,0}, colorMode = "secondary" } } },
-		Wings    = { display = "Butterfly Wings", mirror = true, pieces = {
-			{ shape = "Block", size = {0.08,1.5,1.7}, offset = {0.85,1.35,0.22},  rot = {0,-22,16}, colorMode = "trait" },
-			{ shape = "Block", size = {0.07,1.0,1.1}, offset = {0.95,0.35,-0.62}, rot = {0,-26,10}, colorMode = "secondary" } } },
-		Fins     = { display = "Back Fin", pieces = {
-			{ shape = "Wedge", size = {0.12,0.85,1.5}, offset = {0,1.3,0.12}, colorMode = "trait" } } },
-		Mushroom = { display = "Mushroom Cluster", pieces = {
-			{ shape = "Cylinder", size = {0.14,0.34,0.14}, offset = {0.45,1.15,0.22},   colorMode = 0xF0E6D2 },
-			{ shape = "Ball",     size = {0.6,0.34,0.6},   offset = {0.45,1.5,0.22},   colorMode = "trait" },
-			{ shape = "Cylinder", size = {0.11,0.26,0.11}, offset = {-0.36,1.1,-0.34}, colorMode = 0xF0E6D2 },
-			{ shape = "Ball",     size = {0.46,0.26,0.46}, offset = {-0.36,1.38,-0.34},colorMode = "trait" } } },
-		Screen   = { display = "Belly Screen", pieces = {
-			{ shape = "Block", size = {1.15,0.95,0.12}, offset = {0,0.0,-0.95}, colorMode = 0x2E2E2E },
-			{ shape = "Block", size = {0.95,0.75,0.08}, offset = {0,0.0,-1.02},  colorMode = 0x8FD6FF, material = "Neon" } } },
+		None     = { display = "Bare Back" },
+		Spikes   = { display = "Spines", style = { Spike = { color = "secondary" } } },
+		Shell    = { display = "Shell", style = { Shell = { color = "secondary" } } },
+		Wings    = { display = "Butterfly Wings", style = { Wing = { color = "trait", transparency = 0.08 } } },
+		Fins     = { display = "Back Fin", style = { Fin = { color = "trait" } } },
+		Mushroom = { display = "Mushroom Cluster", style = { Cap = { color = "trait" }, Stem = { color = 0xF2E8D5, skin = false } } },
+		Screen   = { display = "Belly Screen", style = { Screen = { color = 0x8FD6FF, material = "Neon", skin = false }, Bezel = { color = 0x3A3A40, skin = false } } },
 	},
 
 	Tail = {
-		None    = { display = "No Tail", pieces = {} },
-		Stub    = { display = "Stubby Tail", pieces = {
-			{ shape = "Ball", size = {0.42,0.42,0.5}, offset = {0,0.2,1.1}, colorMode = "primary" } } },
-		Long    = { display = "Long Tail", pieces = {
-			{ shape = "Cylinder", size = {0.26,0.8,0.26}, offset = {0,0.4,1.15},  rot = {70,0,0}, colorMode = "primary" },
-			{ shape = "Cylinder", size = {0.2,0.7,0.2},   offset = {0,1.0,1.7}, rot = {48,0,0}, colorMode = "primary" },
-			{ shape = "Ball",     size = {0.26,0.26,0.26},offset = {0,1.55,2.05},  colorMode = "secondary" } } },
-		Fluffy  = { display = "Fluffy Tail", pieces = {
-			{ shape = "Ball", size = {0.75,0.8,0.75}, offset = {0,0.85,1.2}, colorMode = "secondary" },
-			{ shape = "Ball", size = {0.5,0.55,0.5},  offset = {0,1.6,1.38},  colorMode = "secondary" } } },
-		Bolt    = { display = "Lightning Tail", pieces = {
-			{ shape = "Wedge", size = {0.16,0.6,0.3}, offset = {0,0.55,1.15},  rot = {0,0,22},  colorMode = "trait", material = "Neon" },
-			{ shape = "Wedge", size = {0.14,0.5,0.26},offset = {0,1.35,1.42},rot = {0,0,-30}, colorMode = "trait", material = "Neon" } } },
-		FishTail= { display = "Fish Tail", pieces = {
-			{ shape = "Wedge", size = {0.12,0.9,0.8},  offset = {0,0.55,1.3}, rot = {0,0,0},   colorMode = "trait" },
-			{ shape = "Wedge", size = {0.12,0.7,0.6},  offset = {0,0.4,1.55}, rot = {0,180,0}, colorMode = "trait" } } },
+		None    = { display = "No Tail" },
+		Stub    = { display = "Stubby Tail" },
+		Long    = { display = "Long Tail" },
+		Fluffy  = { display = "Fluffy Tail", style = { Tail = { color = "secondary" } } },
+		Bolt    = { display = "Lightning Tail", style = { Tail = { color = "trait", material = "Neon", skin = false } } },
+		FishTail= { display = "Fish Tail", style = { Fin = { color = "trait" } } },
 	},
 
 	Legs = {
-		Stubby = { display = "Stubby Legs", mirror = true, pieces = {
-			{ shape = "Cylinder", size = {0.4,0.5,0.4}, offset = {0.85,-0.92,-0.62}, colorMode = "secondary" },
-			{ shape = "Cylinder", size = {0.4,0.5,0.4}, offset = {0.85,-0.92,0.68},   colorMode = "secondary" } } },
-		Long   = { display = "Long Legs", mirror = true, pieces = {
-			{ shape = "Cylinder", size = {0.26,1.3,0.26}, offset = {0.78,-1.55,-0.56}, colorMode = "secondary" },
-			{ shape = "Cylinder", size = {0.26,1.3,0.26}, offset = {0.78,-1.55,0.62}, colorMode = "secondary" } } },
-		Chunky = { display = "Chunky Legs", mirror = true, pieces = {
-			{ shape = "Block", size = {0.46,0.6,0.46}, offset = {0.82,-1.02,-0.8}, colorMode = "secondary" },
-			{ shape = "Block", size = {0.46,0.6,0.46}, offset = {0.82,-1.02,0.86}, colorMode = "secondary" } } },
-		Noodle = { display = "Noodle Legs", mirror = true, pieces = {
-			{ shape = "Cylinder", size = {0.16,1.5,0.16}, offset = {0.7,-1.7,-0.45}, rot = {0,0,8},  colorMode = "secondary" },
-			{ shape = "Cylinder", size = {0.16,1.5,0.16}, offset = {0.75,-1.7,0.56}, rot = {0,0,-8}, colorMode = "secondary" } } },
+		Stubby = { display = "Stubby Legs" },
+		Long   = { display = "Long Legs" },
+		Chunky = { display = "Chunky Legs" },
+		Noodle = { display = "Noodle Legs" },
 	},
 }
 
 Anatomy.slotOrder = { "Head", "Eyes", "Mouth", "Ears", "Horn", "Back", "Tail", "Legs" }
 
--- ═══ SKINS & PATTERNS ════════════════════════════════════════════════════════
+-- Default look of each PIECE, matched on the piece-name prefix (the part after the last
+-- "__"). Variant `style` entries win over these. `skin = false` means the creature's skin
+-- material (Metal, Crystal, Gooey...) is NOT applied: eye whites stay eye whites.
+--   color: "primary" | "secondary" | "belly" | "trait" | "dark" | hex
+Anatomy.pieceStyle = {
+	Main    = { color = "primary" },
+	Belly   = { color = "belly" },
+	White   = { color = 0xFAF8F2, skin = false },
+	Pupil   = { color = 0xFFFFFF, skin = false },
+	Shine   = { color = 0xFFFFFF, skin = false },
+	Lid     = { color = "primary" },
+	Inner   = { color = 0xFFFFFF, skin = false },
+	Tongue  = { color = 0xFFFFFF, skin = false },
+	Fang    = { color = 0xFFFDF5, skin = false },
+	Tooth   = { color = 0xFFFDF5, skin = false },
+	Ear     = { color = "primary" },
+	Tail    = { color = "primary" },
+	FL      = { color = "primary" },
+	FR      = { color = "primary" },
+	BL      = { color = "primary" },
+	BR      = { color = "primary" },
+}
+Anatomy.defaultPieceStyle = { color = "primary" }
+
+-- Pieces dropped at lower detail levels (SPEC §72 LOD is mandatory).
+Anatomy.lodDrop = {
+	[2] = { Shine2 = true, Tongue = true, Inner = true },
+	[3] = { Shine2 = true, Tongue = true, Inner = true, Shine = true, Lid = true, Fang = true, Tooth = true },
+}
+
+-- ═══ SKINS: surface RESPONSE, not tint (ART_DIRECTION "materials become material") ══
 Anatomy.skins = {
 	Soft      = { material = "SmoothPlastic", reflect = 0.0,  transparency = 0 },
 	Mossy     = { material = "Grass",         reflect = 0.0,  transparency = 0 },
 	Rough     = { material = "Slate",         reflect = 0.0,  transparency = 0 },
-	Plated    = { material = "Metal",         reflect = 0.35, transparency = 0 },
-	Polished  = { material = "Metal",         reflect = 0.6,  transparency = 0 },
-	Faceted   = { material = "Glass",         reflect = 0.4,  transparency = 0.25 },
-	Frosted   = { material = "Glacier",       reflect = 0.2,  transparency = 0.1 },
-	Ember     = { material = "Neon",          reflect = 0.0,  transparency = 0 },
-	Charged   = { material = "Neon",          reflect = 0.0,  transparency = 0 },
-	Gooey     = { material = "Glass",         reflect = 0.15, transparency = 0.3 },
+	Plated    = { material = "Metal",         reflect = 0.2,  transparency = 0 },
+	Polished  = { material = "Foil",          reflect = 0.35, transparency = 0 },
+	Faceted   = { material = "Glass",         reflect = 0.25, transparency = 0.12 },
+	Frosted   = { material = "Ice",           reflect = 0.1,  transparency = 0.05 },
+	Ember     = { material = "CrackedLava",   reflect = 0.0,  transparency = 0 },
+	Charged   = { material = "SmoothPlastic", reflect = 0.15, transparency = 0, glow = 0.35 },
+	Gooey     = { material = "Glass",         reflect = 0.1,  transparency = 0.22 },
 	Spongy    = { material = "Fabric",        reflect = 0.0,  transparency = 0 },
-	Wet       = { material = "Glass",         reflect = 0.3,  transparency = 0.15 },
-	Rubber    = { material = "SmoothPlastic", reflect = 0.1,  transparency = 0 },
+	Wet       = { material = "SmoothPlastic", reflect = 0.22, transparency = 0 },
+	Rubber    = { material = "SmoothPlastic", reflect = 0.08, transparency = 0 },
 	Plastic   = { material = "Plastic",       reflect = 0.05, transparency = 0 },
-	Void      = { material = "Neon",          reflect = 0.0,  transparency = 0 },
-	Starlit   = { material = "Neon",          reflect = 0.0,  transparency = 0 },
-	Arcane    = { material = "ForceField",    reflect = 0.2,  transparency = 0.15 },
+	Void      = { material = "SmoothPlastic", reflect = 0.0,  transparency = 0, darken = 0.45 },
+	Starlit   = { material = "Glass",         reflect = 0.3,  transparency = 0.05, glow = 0.25 },
+	Arcane    = { material = "ForceField",    reflect = 0.1,  transparency = 0 },
 	Weathered = { material = "Concrete",      reflect = 0.0,  transparency = 0 },
-	Dusky     = { material = "Fabric",        reflect = 0.0,  transparency = 0 },
-	Acrid     = { material = "Neon",          reflect = 0.0,  transparency = 0 },
+	Dusky     = { material = "Fabric",        reflect = 0.0,  transparency = 0, darken = 0.2 },
+	Acrid     = { material = "SmoothPlastic", reflect = 0.12, transparency = 0, glow = 0.15 },
 }
 
 Anatomy.patterns = { "Plain", "Spotted", "Striped", "Patchy", "Gradient" }
@@ -268,6 +227,24 @@ function Anatomy.combinationCount(): number
 		n *= #Anatomy.variantsFor(slot)
 	end
 	return n * #Anatomy.bodyOrder
+end
+
+-- Resolve how one piece should look: variant style > piece default > global default.
+function Anatomy.styleFor(slot: string, variant: string, piece: string)
+	local def = (Anatomy.parts[slot] or {})[variant]
+	if def and def.style then
+		for prefix, style in pairs(def.style) do
+			if string.sub(piece, 1, #prefix) == prefix then
+				return style
+			end
+		end
+	end
+	for prefix, style in pairs(Anatomy.pieceStyle) do
+		if string.sub(piece, 1, #prefix) == prefix then
+			return style
+		end
+	end
+	return Anatomy.defaultPieceStyle
 end
 
 return Anatomy

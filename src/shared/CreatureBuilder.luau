@@ -1,17 +1,19 @@
 --!strict
--- Shared.CreatureBuilder — genome -> assembled Model.  SPEC §71.
+-- Shared.CreatureBuilder — genome -> assembled creature Model.  SPEC §71.
 --
--- Runs identically on server and client. We replicate the COMPACT GENOME and let
--- each side assemble, so we never send models over the wire.
+-- The genome is the only thing stored or sent. Assembly clones Blender-authored skinned
+-- meshes from ReplicatedStorage.Assets.Creatures.<Family>:
 --
--- Coordinate convention:
---   Head-attached slots (Head/Eyes/Mouth/Ears/Horn) use headUnit = head diameter.
---   Body-attached slots (Back/Tail/Legs)            use bodyUnit = torso height.
---   Piece `offset` and `size` are both in those units, so a creature scales cleanly.
+--   Bodies.<Head>   RootPart (holds the whole Bone tree) + Body__<Head>__Main/__Belly
+--   Parts           every part variant, named <Slot>__<Variant>__<Piece>
 --
--- Roblox gotcha handled here: Part.Shape = Cylinder has its axis on X, not Y.
--- Authored sizes are {diameter, height, diameter}, so cylinders get swapped and
--- rotated. Without this every cylinder in the game lies on its side.
+-- A part mesh deforms with the body's skeleton as soon as it is WELDED to the RootPart:
+-- Roblox resolves skinned-mesh bones by name inside the part's assembly (verified, see
+-- docs/DECISIONS.md). So a mutation swapping a tail is: destroy old pieces, weld new ones.
+--
+-- Output contract other systems rely on:
+--   model.PrimaryPart = RootPart (anchored, invisible, sits AT GROUND LEVEL under the feet)
+--   attributes: CreatureId Stage Generation Dominant Scale Family Head Height GroundOffset
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -24,10 +26,12 @@ local Progression = require(Config:WaitForChild("Progression"))
 local Ingredients = require(Config:WaitForChild("Ingredients"))
 local Rng = require(Shared:WaitForChild("Util"):WaitForChild("Rng"))
 local TableUtil = require(Shared.Util:WaitForChild("TableUtil"))
+local PropBuilder = require(Shared:WaitForChild("PropBuilder"))
 
 local CreatureBuilder = {}
 
-local HEAD_SLOTS = { Eyes = true, Mouth = true, Ears = true, Horn = true, Head = true }
+local WHITE = Color3.new(1, 1, 1)
+local BLACK = Color3.new(0, 0, 0)
 
 -- ═══ TRAIT MATH (SPEC §12 three layers) ══════════════════════════════════════
 
@@ -77,8 +81,12 @@ function CreatureBuilder.activeMutations(genome)
 	end
 	table.sort(list, function(a, b)
 		local sa, sb = 0, 0
-		for _, v in pairs(a.def.requirements) do sa += v end
-		for _, v in pairs(b.def.requirements) do sb += v end
+		for _, v in pairs(a.def.requirements) do
+			sa += v
+		end
+		for _, v in pairs(b.def.requirements) do
+			sb += v
+		end
 		return sa < sb
 	end)
 	return list
@@ -100,11 +108,21 @@ function CreatureBuilder.resolve(genome)
 				parts[slot] = variant
 			end
 		end
-		if def.tintPrimary then primary = TableUtil.unpackColor(def.tintPrimary) end
-		if def.tintSecondary then secondary = TableUtil.unpackColor(def.tintSecondary) end
-		if def.glow then glow = math.max(glow, def.glow) end
-		if def.sizeMul then sizeMul *= def.sizeMul end
-		if def.ability then abilities[def.ability] = true end
+		if def.tintPrimary then
+			primary = TableUtil.unpackColor(def.tintPrimary)
+		end
+		if def.tintSecondary then
+			secondary = TableUtil.unpackColor(def.tintSecondary)
+		end
+		if def.glow then
+			glow = math.max(glow, def.glow)
+		end
+		if def.sizeMul then
+			sizeMul *= def.sizeMul
+		end
+		if def.ability then
+			abilities[def.ability] = true
+		end
 	end
 
 	local domTrait = CreatureBuilder.dominantTrait(genome)
@@ -129,237 +147,263 @@ function CreatureBuilder.resolve(genome)
 	}
 end
 
--- ═══ PRIMITIVE CONSTRUCTION ══════════════════════════════════════════════════
+-- ═══ ASSETS ══════════════════════════════════════════════════════════════════
 
-local function materialEnum(name: string?): Enum.Material
-	if not name then return Enum.Material.SmoothPlastic end
-	local ok, mat = pcall(function() return (Enum.Material :: any)[name] end)
-	return (ok and mat) or Enum.Material.SmoothPlastic
+local warned: { [string]: boolean } = {}
+local function warnOnce(key: string, msg: string)
+	if not warned[key] then
+		warned[key] = true
+		warn("[CreatureBuilder] " .. msg)
+	end
 end
 
-local function resolveColor(mode, ctx): Color3
+local function familyFolder(family: string): Instance?
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	local creatures = assets and assets:FindFirstChild("Creatures")
+	if not creatures then
+		return nil
+	end
+	local f = creatures:FindFirstChild(family)
+	if f and f:FindFirstChild("Bodies") and f:FindFirstChild("Parts") then
+		return f
+	end
+	local fallback = creatures:FindFirstChild("Cute")
+	if fallback then
+		warnOnce("family:" .. family, "no assets for family " .. family .. ", using Cute")
+	end
+	return fallback
+end
+
+-- Index a family's Parts model once: "Slot__Variant" -> { MeshPart }
+local partIndex: { [Instance]: { [string]: { MeshPart } } } = {}
+local function indexParts(partsModel: Instance): { [string]: { MeshPart } }
+	local cached = partIndex[partsModel]
+	if cached then
+		return cached
+	end
+	local idx: { [string]: { MeshPart } } = {}
+	for _, child in ipairs(partsModel:GetChildren()) do
+		if child:IsA("MeshPart") then
+			local slot, variant = string.match(child.Name, "^(%w+)__(%w+)__")
+			if slot and variant then
+				local key = slot .. "__" .. variant
+				idx[key] = idx[key] or {}
+				table.insert(idx[key], child)
+			end
+		end
+	end
+	partIndex[partsModel] = idx
+	return idx
+end
+
+-- ═══ STYLE ═══════════════════════════════════════════════════════════════════
+
+local function materialEnum(name: string?): Enum.Material?
+	if not name then
+		return nil
+	end
+	local ok, mat = pcall(function()
+		return (Enum.Material :: any)[name]
+	end)
+	return ok and mat or nil
+end
+
+local function colorFor(mode, ctx): Color3
 	if type(mode) == "number" then
 		return TableUtil.unpackColor(mode)
 	elseif mode == "secondary" then
 		return ctx.secondary
+	elseif mode == "belly" then
+		return ctx.belly
 	elseif mode == "trait" then
 		return ctx.traitColor
+	elseif mode == "dark" then
+		return ctx.primary:Lerp(BLACK, 0.35)
 	end
 	return ctx.primary
 end
 
--- Builds one piece. Returns the Part, unwelded and unparented.
-local function makePiece(piece, unit: number, anchorCF: CFrame, ctx, mirrored: boolean, offScale: Vector3?): BasePart
-	local shape = piece.shape or "Block"
-	local sx, sy, sz = piece.size[1] * unit, piece.size[2] * unit, piece.size[3] * unit
-	-- Body slots pass per-axis half-extents so parts stay attached on tall/narrow
-	-- bodies; head slots pass nil and fall back to the uniform head unit.
-	local os3 = offScale or Vector3.new(unit, unit, unit)
+local function applyStyle(part: MeshPart, slot: string, variant: string, piece: string, ctx)
+	local style = Anatomy.styleFor(slot, variant, piece)
+	local skinDef = Anatomy.skins[ctx.skin or "Soft"] or Anatomy.skins.Soft
+	local color = colorFor(style.color, ctx)
+	local material = materialEnum(style.material) or Enum.Material.SmoothPlastic
+	local transparency = style.transparency or 0
+	local reflect = 0
 
-	local part: BasePart
-	local extraRot = CFrame.identity
-
-	if shape == "Wedge" then
-		part = Instance.new("WedgePart")
-		part.Size = Vector3.new(sx, sy, sz)
-	elseif shape == "Cylinder" then
-		part = Instance.new("Part")
-		;(part :: Part).Shape = Enum.PartType.Cylinder
-		-- authored as {diameter, height, diameter}; Part cylinders run along X
-		part.Size = Vector3.new(sy, sx, sz)
-		extraRot = CFrame.Angles(0, 0, math.rad(90))
-	elseif shape == "Ball" then
-		part = Instance.new("Part")
-		;(part :: Part).Shape = Enum.PartType.Ball
-		-- Ball ignores non-uniform size visually, so approximate with a Block when
-		-- the piece is clearly not spherical. Keeps silhouettes honest.
-		local maxD = math.max(sx, sy, sz)
-		local minD = math.min(sx, sy, sz)
-		if maxD > minD * 1.35 then
-			;(part :: Part).Shape = Enum.PartType.Block
-		end
-		part.Size = Vector3.new(sx, sy, sz)
-	else
-		part = Instance.new("Part")
-		;(part :: Part).Shape = Enum.PartType.Block
-		part.Size = Vector3.new(sx, sy, sz)
-	end
-
-	local ox, oy, oz = piece.offset[1] * os3.X, piece.offset[2] * os3.Y, piece.offset[3] * os3.Z
-	local rx, ry, rz = 0, 0, 0
-	if piece.rot then
-		rx, ry, rz = math.rad(piece.rot[1] or 0), math.rad(piece.rot[2] or 0), math.rad(piece.rot[3] or 0)
-	end
-	if mirrored then
-		ox = -ox
-		ry, rz = -ry, -rz
-	end
-
-	part.CFrame = anchorCF * CFrame.new(ox, oy, oz) * CFrame.Angles(rx, ry, rz) * extraRot
-	part.Color = resolveColor(piece.colorMode, ctx)
-	part.Material = materialEnum(piece.material)
-	part.CanCollide = false
-	part.CanQuery = false
-	part.CanTouch = false
-	part.Anchored = false
-	part.Massless = true
-	part.TopSurface = Enum.SurfaceType.Smooth
-	part.BottomSurface = Enum.SurfaceType.Smooth
-	return part
-end
-
-local function buildVariant(slot: string, variantName: string, unit: number, anchorCF: CFrame, ctx, container: Model, offScale: Vector3?)
-	local slotDefs = Anatomy.parts[slot]
-	if not slotDefs then return end
-	local variant = slotDefs[variantName]
-	if not variant then return end
-
-	for _, piece in ipairs(variant.pieces) do
-		local p = makePiece(piece, unit, anchorCF, ctx, false, offScale)
-		p.Name = slot .. "_" .. variantName
-		p.Parent = container
-		if variant.mirror then
-			local m = makePiece(piece, unit, anchorCF, ctx, true, offScale)
-			m.Name = slot .. "_" .. variantName .. "_M"
-			m.Parent = container
+	if style.skin ~= false and not style.material then
+		material = materialEnum(skinDef.material) or material
+		reflect = skinDef.reflect or 0
+		transparency = math.max(transparency, skinDef.transparency or 0)
+		if skinDef.darken then
+			color = color:Lerp(BLACK, skinDef.darken)
 		end
 	end
-end
 
--- ═══ PATTERNS (cheap visual variety — SPEC §91 "no two look identical") ══════
-local function applyPattern(pattern: string, torso: BasePart, unit: number, ctx, container: Model, rng)
-	if pattern == "Plain" or pattern == "Gradient" then
-		return
-	end
-	local count = pattern == "Spotted" and 4 or (pattern == "Striped" and 3 or 2)
-	for i = 1, count do
-		local p = Instance.new("Part")
-		p.Anchored = false
-		p.CanCollide = false
-		p.CanQuery = false
-		p.CanTouch = false
-		p.Massless = true
-		p.Material = torso.Material
-		p.Color = ctx.secondary
-		if pattern == "Spotted" then
-			p.Shape = Enum.PartType.Ball
-			local d = unit * rng:num(0.22, 0.38)
-			p.Size = Vector3.new(d, d, d)
-			p.CFrame = torso.CFrame * CFrame.Angles(rng:num(0, 6.28), rng:num(0, 6.28), 0)
-				* CFrame.new(0, 0, -torso.Size.Z * 0.42)
-		elseif pattern == "Striped" then
-			p.Size = Vector3.new(torso.Size.X * 1.02, unit * 0.16, torso.Size.Z * 1.02)
-			p.CFrame = torso.CFrame * CFrame.new(0, (i - 2) * unit * 0.32, 0)
-		else -- Patchy
-			p.Shape = Enum.PartType.Ball
-			local d = unit * rng:num(0.4, 0.62)
-			p.Size = Vector3.new(d, d * 0.5, d)
-			p.CFrame = torso.CFrame * CFrame.Angles(rng:num(0, 6.28), rng:num(0, 6.28), 0)
-				* CFrame.new(0, 0, -torso.Size.Z * 0.4)
-		end
-		p.Name = "Pattern"
-		p.Parent = container
-	end
+	part.Color = color
+	part.Material = material
+	part.Reflectance = reflect
+	part.Transparency = transparency
+	part.TextureID = ""
 end
 
 -- ═══ MAIN BUILD ══════════════════════════════════════════════════════════════
 
+local function stripJoints(p: Instance)
+	for _, c in ipairs(p:GetChildren()) do
+		if c:IsA("JointInstance") or c:IsA("WeldConstraint") or c:IsA("Motor6D") then
+			c:Destroy()
+		end
+	end
+end
+
+local function attach(model: Model, root: BasePart, templateRoot: BasePart, src: MeshPart): MeshPart
+	local p = src:Clone()
+	stripJoints(p)
+	p.Anchored = false
+	p.CanCollide = false
+	p.CanTouch = false
+	p.CanQuery = true -- clicking any visible piece inspects the creature (SPEC §24)
+	p.Massless = true
+	p.CastShadow = true
+	p.CFrame = root.CFrame * templateRoot.CFrame:ToObjectSpace(src.CFrame)
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = root
+	weld.Part1 = p
+	weld.Parent = p
+	p.Parent = model
+	return p
+end
+
+local function droppedAt(level: number, piece: string): boolean
+	local drop = Anatomy.lodDrop[level]
+	if not drop then
+		return false
+	end
+	for prefix in pairs(drop) do
+		if string.sub(piece, 1, #prefix) == prefix then
+			return true
+		end
+	end
+	return false
+end
+
 --[[
 	Assembles `genome` into a Model.
-	`lod` 1 = full, 2 = simplified (drops pattern + cosmetic slots), 3 = torso+head only.
-	SPEC §72: never replicate every full complex monster at max fidelity to mobile.
+	`lod` 1 = full, 2 = drops tiny interior pieces, 3 = silhouette + eyes.
+	SPEC §72: never ship every full monster at max fidelity to mobile.
 ]]
 function CreatureBuilder.build(genome, lod: number?): Model
 	local level = lod or 1
 	local ctx = CreatureBuilder.resolve(genome)
-	local rng = Rng.fromString(genome.id or "unseeded")
 	local body = Anatomy.bodies[genome.bodyFamily] or Anatomy.bodies.Cute
-	local skin = Anatomy.skins[ctx.skin] or Anatomy.skins.Soft
+	ctx.belly = ctx.primary:Lerp(WHITE, 0.45 + (body.bellyLift or 0.15))
 
 	local model = Instance.new("Model")
 	model.Name = genome.name or "Creature"
 
-	-- torso
-	local torso = Instance.new("Part")
-	torso.Name = "Torso"
-	local ts = body.torso.size
-	torso.Size = Vector3.new(ts[1], ts[2], ts[3]) * ctx.scale
-	if body.torso.shape == "Ball" then
-		torso.Shape = Enum.PartType.Ball
+	local fam = familyFolder(genome.bodyFamily or "Cute")
+	if not fam then
+		error("[CreatureBuilder] ReplicatedStorage.Assets.Creatures is missing — install creature assets")
 	end
-	torso.Color = ctx.primary
-	torso.Material = materialEnum(skin.material)
-	torso.Transparency = skin.transparency or 0
-	torso.Reflectance = skin.reflect or 0
-	torso.CanCollide = true
-	torso.Anchored = true -- root is driven directly; children ride along on welds
-	torso.TopSurface = Enum.SurfaceType.Smooth
-	torso.BottomSurface = Enum.SurfaceType.Smooth
-	torso.Parent = model
-	model.PrimaryPart = torso
-
-	-- Part SIZES use a balanced unit (mean of the torso axes) so a tall narrow body
-	-- does not get oversized limbs. Part OFFSETS use per-axis half-extents.
-	local bodyUnit = (torso.Size.X + torso.Size.Y + torso.Size.Z) / 3
-	local offScale = torso.Size * 0.5
-	local headUnit = bodyUnit * body.headScale * 0.62
-
-	-- Attach the head just past the torso front and let it overlap slightly, rather
-	-- than projecting a raw fraction of torso depth (which detached Heavy heads).
-	local headZ = -(torso.Size.Z * 0.5 + headUnit * 0.35) * body.headForward
-	local headCF = torso.CFrame * CFrame.new(0, torso.Size.Y * 0.5 * body.headLift, headZ)
-
-	-- body-attached slots
-	buildVariant("Legs", ctx.parts.Legs, bodyUnit, torso.CFrame, ctx, model, offScale)
-	buildVariant("Tail", ctx.parts.Tail, bodyUnit, torso.CFrame, ctx, model, offScale)
-	if level <= 2 then
-		buildVariant("Back", ctx.parts.Back, bodyUnit, torso.CFrame, ctx, model, offScale)
+	local bodies = fam:FindFirstChild("Bodies") :: Instance
+	local head = ctx.parts.Head or "Round"
+	local bodyT = bodies:FindFirstChild(head) or bodies:FindFirstChild("Round") or bodies:FindFirstChildWhichIsA("Model")
+	if not bodies:FindFirstChild(head) then
+		warnOnce("head:" .. fam.Name .. head, "no " .. head .. " body for " .. fam.Name .. ", using " .. (bodyT and bodyT.Name or "?"))
 	end
+	assert(bodyT, "no bodies installed")
+	local bodyRoot = bodyT:FindFirstChild("RootPart") :: BasePart
+	local partsModel = fam:FindFirstChild("Parts") :: Instance
+	local partsRoot = partsModel:FindFirstChild("RootPart") :: BasePart
 
-	-- head-attached slots
-	buildVariant("Head", ctx.parts.Head, headUnit, headCF, ctx, model)
-	buildVariant("Eyes", ctx.parts.Eyes, headUnit, headCF, ctx, model)
-	if level <= 2 then
-		buildVariant("Mouth", ctx.parts.Mouth, headUnit, headCF, ctx, model)
-		buildVariant("Ears", ctx.parts.Ears, headUnit, headCF, ctx, model)
-		buildVariant("Horn", ctx.parts.Horn, headUnit, headCF, ctx, model)
+	-- the root carries every bone; it is the creature's physical anchor
+	local root = bodyRoot:Clone()
+	stripJoints(root)
+	for _, c in ipairs(root:GetChildren()) do
+		if not c:IsA("Bone") then
+			c:Destroy()
+		end
 	end
+	root.Name = "RootPart"
+	root.Anchored = true
+	root.CanCollide = false
+	root.CanTouch = false
+	root.CanQuery = false
+	root.Transparency = 1
+	root.CFrame = CFrame.identity
+	root.Parent = model
+	model.PrimaryPart = root
 
-	if level == 1 then
-		applyPattern(genome.material.Pattern or "Plain", torso, bodyUnit, ctx, model, rng)
-	end
-
-	-- glow (SPEC §43: rare mutations should be recognisable across a server)
-	if ctx.glow > 0.05 and level == 1 then
-		local light = Instance.new("PointLight")
-		light.Color = ctx.traitColor
-		light.Brightness = 1.4 * ctx.glow
-		light.Range = 10 + 12 * ctx.glow
-		light.Parent = torso
-	end
-
-	-- weld everything to the root
-	for _, child in ipairs(model:GetChildren()) do
-		if child:IsA("BasePart") and child ~= torso then
-			local weld = Instance.new("WeldConstraint")
-			weld.Part0 = torso
-			weld.Part1 = child
-			weld.Parent = child
+	-- body pieces (the sculpted head is part of the body)
+	for _, src in ipairs(bodyT:GetChildren()) do
+		if src:IsA("MeshPart") and src.Name ~= "Rig__Sockets" then
+			local piece = string.match(src.Name, "__([%w]+)$") or "Main"
+			local p = attach(model, root, bodyRoot, src)
+			applyStyle(p, "Body", head, piece, ctx)
 		end
 	end
 
-	-- metadata other systems read without re-deriving
-	-- Distance from pivot to the lowest point, so callers can sit a creature ON the
-	-- ground instead of guessing (case 6 sank its legs to y = -4.9 without this).
-	local cf, size = model:GetBoundingBox()
-	model:SetAttribute("GroundOffset", (torso.Position.Y - (cf.Position.Y - size.Y * 0.5)))
+	-- every other slot
+	local idx = indexParts(partsModel)
+	for _, slot in ipairs(Anatomy.slotOrder) do
+		if slot ~= "Head" then
+			local variant = ctx.parts[slot]
+			if variant and variant ~= "None" then
+				local list = idx[slot .. "__" .. variant]
+				if not list then
+					warnOnce("part:" .. fam.Name .. slot .. variant, "missing part " .. slot .. "/" .. variant .. " for " .. fam.Name)
+				else
+					for _, src in ipairs(list) do
+						local piece = string.match(src.Name, "__([%w]+)$") or ""
+						if not droppedAt(level, piece) then
+							local p = attach(model, root, partsRoot, src)
+							applyStyle(p, slot, variant, piece, ctx)
+						end
+					end
+				end
+			end
+		end
+	end
 
+	-- glow (SPEC §43: rare mutations should be recognisable across a server)
+	local skinDef = Anatomy.skins[ctx.skin or "Soft"]
+	local glow = math.max(ctx.glow or 0, skinDef and skinDef.glow or 0)
+	if glow > 0.05 and level <= 2 then
+		local light = Instance.new("PointLight")
+		light.Name = "Glow"
+		light.Color = ctx.traitColor
+		light.Brightness = 1.2 * glow
+		light.Range = 8 + 10 * glow
+		light.Parent = root
+	end
+
+	if math.abs(ctx.scale - 1) > 1e-3 then
+		model:ScaleTo(ctx.scale)
+	end
+
+	-- measure: lowest and highest point relative to the root, from the rest-pose parts
+	local lowest, highest = math.huge, -math.huge
+	for _, d in ipairs(model:GetChildren()) do
+		if d:IsA("MeshPart") then
+			local half = d.Size.Y * 0.5
+			lowest = math.min(lowest, d.Position.Y - half)
+			highest = math.max(highest, d.Position.Y + half)
+		end
+	end
+	if lowest == math.huge then
+		lowest, highest = 0, 2
+	end
+	local rootY = root.Position.Y
+	model:SetAttribute("GroundOffset", rootY - lowest)
+	model:SetAttribute("Height", highest - lowest)
 	model:SetAttribute("CreatureId", genome.id)
 	model:SetAttribute("Stage", genome.stage or 1)
 	model:SetAttribute("Generation", genome.generation or 1)
 	model:SetAttribute("Dominant", ctx.dominant or "")
 	model:SetAttribute("Scale", ctx.scale)
-
+	model:SetAttribute("Family", fam.Name)
+	model:SetAttribute("Head", bodyT.Name)
 	return model
 end
 
@@ -392,20 +436,20 @@ function CreatureBuilder.newGenome(opts)
 	-- Babies start deliberately plain so the FIRST feed is an obvious change.
 	-- SPEC §8 (0:16) and non-negotiable §99 #2.
 	local chosen: { [string]: string } = {}
-	chosen.Head = randomVariant("Head", rng, chosen)
-	chosen.Eyes = rng:chance(0.7) and "Big" or randomVariant("Eyes", rng, chosen)
+	chosen.Head = opts.plainStart and "Round" or randomVariant("Head", rng, chosen)
+	chosen.Eyes = (opts.plainStart or rng:chance(0.7)) and "Big" or randomVariant("Eyes", rng, chosen)
 	chosen.Mouth = "Smile"
-	chosen.Ears = opts.plainStart and "None" or randomVariant("Ears", rng, chosen)
+	chosen.Ears = opts.plainStart and "Round" or randomVariant("Ears", rng, chosen)
 	chosen.Horn = "None"
 	chosen.Back = "None"
 	chosen.Tail = opts.plainStart and "Stub" or randomVariant("Tail", rng, chosen)
-	chosen.Legs = randomVariant("Legs", rng, chosen)
+	chosen.Legs = opts.plainStart and "Stubby" or randomVariant("Legs", rng, chosen)
 
 	local base = TableUtil.unpackColor(opts.baseColor or body.baseColor)
-	local hue = rng:num(-0.06, 0.06)
+	local hue = rng:num(-0.05, 0.05)
 	local h, s, v = Color3.toHSV(base)
-	local primary = Color3.fromHSV((h + hue) % 1, math.clamp(s * rng:num(0.85, 1.15), 0, 1), math.clamp(v * rng:num(0.9, 1.08), 0, 1))
-	local secondary = Color3.fromHSV((h + hue + 0.08) % 1, math.clamp(s * 0.8, 0, 1), math.clamp(v * 0.82, 0, 1))
+	local primary = Color3.fromHSV((h + hue) % 1, math.clamp(s * rng:num(0.9, 1.15), 0, 1), math.clamp(v * rng:num(0.94, 1.04), 0, 1))
+	local secondary = Color3.fromHSV((h + hue + 0.08) % 1, math.clamp(s * 0.85, 0, 1), math.clamp(v * 0.85, 0, 1))
 
 	-- temperament (SPEC §18) — biased by body family, then jittered
 	local temperament = {}
@@ -447,50 +491,9 @@ function CreatureBuilder.newGenome(opts)
 	}
 end
 
--- ═══ INGREDIENT PROPS (same piece vocabulary — SPEC §7 world as cabinet) ═════
-
+-- Ingredient props moved to PropBuilder; kept here so existing callers keep working.
 function CreatureBuilder.buildProp(ingredientId: string): Model?
-	local def = Ingredients.get(ingredientId)
-	if not def then return nil end
-
-	local model = Instance.new("Model")
-	model.Name = ingredientId
-
-	local ctx = {
-		primary = TableUtil.unpackColor(def.model.color),
-		secondary = TableUtil.unpackColor(def.model.color),
-		traitColor = TableUtil.unpackColor(def.model.color),
-	}
-
-	local main = makePiece({
-		shape = def.model.shape,
-		size = def.model.size,
-		offset = { 0, 0, 0 },
-		colorMode = def.model.color,
-		material = def.model.material,
-	}, 1, CFrame.identity, ctx, false)
-	main.Name = "Main"
-	main.Anchored = true
-	main.CanQuery = true
-	main.Parent = model
-	model.PrimaryPart = main
-
-	if def.model.topper then
-		local t = def.model.topper
-		local piece = makePiece({
-			shape = t.shape,
-			size = t.size,
-			offset = t.offset,
-			colorMode = t.color,
-			material = t.material,
-		}, 1, main.CFrame, ctx, false)
-		piece.Name = "Topper"
-		piece.Anchored = true
-		piece.Parent = model
-	end
-
-	model:SetAttribute("Ingredient", ingredientId)
-	return model
+	return PropBuilder.build(ingredientId)
 end
 
 return CreatureBuilder

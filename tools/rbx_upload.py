@@ -32,6 +32,7 @@ CONTENT_TYPES = {
     ".glb": "model/gltf-binary",
     ".gltf": "model/gltf+json",
     ".rbxm": "model/x-rbxm",
+    ".rbxmx": "model/x-rbxm",
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",

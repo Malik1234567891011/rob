@@ -1,0 +1,44 @@
+{
+  "art/build/cute_body_Round.fbx": {
+    "assetId": "88048221812630",
+    "at": 1789546340,
+    "name": "FAM cute_body_Round",
+    "sha": "2f40d580b818ec3b",
+    "type": "Model"
+  },
+  "art/build/cute_parts.fbx": {
+    "assetId": "116296879253365",
+    "at": 1789546346,
+    "name": "FAM cute_parts",
+    "sha": "d59623d7fd541cd5",
+    "type": "Model"
+  },
+  "art/build/probe_ear.fbx": {
+    "assetId": "120540404644340",
+    "at": 1789545210,
+    "name": "FAM probe_ear",
+    "sha": "6eeed12f94c4df95",
+    "type": "Model"
+  },
+  "art/build/probe_shared.fbx": {
+    "assetId": "135662796605135",
+    "at": 1789545204,
+    "name": "FAM probe_shared",
+    "sha": "c66949de126b26f5",
+    "type": "Model"
+  },
+  "art/build/probe_tail.fbx": {
+    "assetId": "95511196423061",
+    "at": 1789545083,
+    "name": "FAM probe tail",
+    "sha": "5ede1823933c57da",
+    "type": "Model"
+  },
+  "art/build/sync.rbxmx": {
+    "assetId": "78829600861065",
+    "at": 1789546622,
+    "name": "FAM code sync",
+    "sha": "e518c2640dfef023",
+    "type": "Model"
+  }
+}

@@ -91,7 +91,11 @@ function AmbienceController.start()
 	local spinners = {}
 	local function addSpin(m)
 		if m:IsA("Model") or m:IsA("BasePart") then
-			spinners[m] = m:GetPivot()
+			-- spin about the part's CENTRE, not its pivot (a portal disc's pivot is the arch base)
+			local part = m:IsA("Model") and m.PrimaryPart or m
+			local base = m:GetPivot()
+			local centre = part and base:ToObjectSpace(CFrame.new(part.Position)) or CFrame.identity
+			spinners[m] = { base = base, centre = centre - centre.Position + centre.Position }
 		end
 	end
 	for _, m in ipairs(CollectionService:GetTagged("Spin")) do
@@ -109,9 +113,10 @@ function AmbienceController.start()
 			rainPart.CFrame = CFrame.new(cam.CFrame.Position + Vector3.new(0, 45, 0))
 		end
 		local t = os.clock()
-		for m, base in pairs(spinners) do
+		for m, s in pairs(spinners) do
 			if m.Parent then
-				m:PivotTo(base * CFrame.Angles(0, 0, t * 0.6))
+				local c = CFrame.new(s.centre.Position)
+				m:PivotTo(s.base * c * CFrame.Angles(0, 0, t * 0.6) * c:Inverse())
 			else
 				spinners[m] = nil
 			end

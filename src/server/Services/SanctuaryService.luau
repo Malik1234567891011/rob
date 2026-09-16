@@ -152,7 +152,7 @@ local function placeBuild(index: number, buildName: string, animate: boolean)
 		if m then
 			m:SetAttribute("Build", buildName)
 			if buildName == "Windmill" then
-				local sails = Kit.place("Windmill_Sails", m:GetPivot() * CFrame.new(0, 11, -2.2), folder, { collide = false })
+				local sails = Kit.place("Windmill_Sails", m:GetPivot() * CFrame.new(0, 11, -3.6), folder, { collide = false })
 				if sails then
 					sails.Name = "WindmillSails"
 					CollectionService:AddTag(sails, "Spin")

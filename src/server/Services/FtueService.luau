@@ -29,10 +29,57 @@ local FtueService = {}
 
 -- SPEC §8: "visually different only by colour/personality. No stats."
 local EGGS = {
-	{ color = 0xFFC9D6, family = "Cute",  label = "" },
-	{ color = 0x9AA6B2, family = "Heavy", label = "" },
-	{ color = 0xC3A8FF, family = "Weird", label = "" },
+	{ color = 0xFFC9D6, family = "Cute",  label = "", mesh = "Egg_Pink" },
+	{ color = 0x9AA6B2, family = "Heavy", label = "", mesh = "Egg_Grey" },
+	{ color = 0xC3A8FF, family = "Weird", label = "", mesh = "Egg_Purple" },
 }
+
+local RunService = game:GetService("RunService")
+
+-- Blender egg meshes live in Assets.Props (kit_props.fbx). Primitive ball if missing.
+local function propMesh(name: string): BasePart?
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	local props = assets and assets:FindFirstChild("Props")
+	local m = props and props:FindFirstChild(name)
+	local main = m and (m :: Model).PrimaryPart
+	return main and main:Clone() or nil
+end
+
+-- the chosen egg cracks: top shell pops off and tumbles, bottom stays, both fade
+local function crackShell(at: CFrame, color: Color3)
+	local top, bottom = propMesh("EggShell_Top"), propMesh("EggShell_Bottom")
+	if not (top and bottom) then
+		return
+	end
+	local ground = at.Position - Vector3.new(0, 1.5, 0)
+	bottom.CFrame = CFrame.new(ground + Vector3.new(0, bottom.Size.Y * 0.5, 0))
+	top.CFrame = bottom.CFrame + Vector3.new(0, 1.35, 0)
+	for _, p in ipairs({ top, bottom }) do
+		p.Color = color:Lerp(Color3.new(1, 1, 1), 0.55)
+		p.CanQuery = false
+		p.Parent = workspace
+	end
+	local t0 = os.clock()
+	local side = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5).Unit * 5
+	local conn
+	conn = RunService.Heartbeat:Connect(function()
+		local t = os.clock() - t0
+		if t < 0.9 then
+			local y = 1.35 + 14 * t - 22 * t * t
+			top.CFrame = CFrame.new(bottom.Position + side * t + Vector3.new(0, math.max(y, -0.4), 0))
+				* CFrame.Angles(t * 9, 0, t * 6)
+		end
+		if t > 2.2 then
+			local a = math.clamp((t - 2.2) / 0.8, 0, 1)
+			top.Transparency, bottom.Transparency = a, a
+		end
+		if t > 3.1 then
+			conn:Disconnect()
+			top:Destroy()
+			bottom:Destroy()
+		end
+	end)
+end
 
 -- 0:12 the apple. 0:25 "try feeding it something weird."
 local STARTER_APPLE = "Apple"
@@ -106,21 +153,39 @@ local function spawnEggs(player: Player)
 	set.Parent = workspace
 
 	for i, egg in ipairs(EGGS) do
-		local p = Instance.new("Part")
-		p.Name = "Egg" .. i
-		p.Shape = Enum.PartType.Ball
-		p.Size = Vector3.new(2.4, 3.1, 2.4)
-		p.Color = TableUtil.unpackColor(egg.color)
-		p.Material = Enum.Material.SmoothPlastic
-		p.Anchored = true
-		p.CanCollide = false
-		p.CFrame = CFrame.new(base + Vector3.new((i - 2) * 4.5, -1.2, -9))
-		p.Parent = set
+		local p = propMesh(egg.mesh)
+		local spot = base + Vector3.new((i - 2) * 4.5, -1.2, -9)
+		if p then
+			local gy = CreatureService.groundAt(spot.X, spot.Z, spot.Y + 4)
+			spot = Vector3.new(spot.X, gy, spot.Z)
+		else
+			local ball = Instance.new("Part")
+			ball.Shape = Enum.PartType.Ball
+			ball.Size = Vector3.new(2.4, 3.1, 2.4)
+			ball.Color = TableUtil.unpackColor(egg.color)
+			ball.Material = Enum.Material.SmoothPlastic
+			p = ball
+		end
+		local egpart = p :: BasePart
+		egpart.Name = "Egg" .. i
+		egpart.Anchored = true
+		egpart.CanCollide = false
+		-- the base sits on the ground; the egg rocks about its base, not its middle
+		local baseCF = CFrame.new(spot) * CFrame.Angles(0, math.rad((i - 2) * 25), 0)
+		local half = egpart.Size.Y * 0.5
+		egpart.CFrame = baseCF * CFrame.new(0, half, 0)
+		egpart.Parent = set
 
 		-- they wobble. that is the whole invitation.
-		TweenService:Create(p, TweenInfo.new(0.9 + i * 0.13, Enum.EasingStyle.Sine,
-			Enum.EasingDirection.InOut, -1, true),
-			{ CFrame = p.CFrame * CFrame.Angles(0, 0, math.rad(i % 2 == 0 and 11 or -11)) }):Play()
+		local rock = Instance.new("NumberValue")
+		rock.Value = -1
+		rock.Parent = egpart
+		rock.Changed:Connect(function(v)
+			-- a hop every few rocks so it reads as "something inside"
+			egpart.CFrame = baseCF * CFrame.Angles(0, 0, math.rad(v * 12)) * CFrame.new(0, half, 0)
+		end)
+		TweenService:Create(rock, TweenInfo.new(0.45 + i * 0.07, Enum.EasingStyle.Sine,
+			Enum.EasingDirection.InOut, -1, true, (i - 1) * 0.3), { Value = 1 }):Play()
 
 		local prompt = Instance.new("ProximityPrompt")
 		prompt.ActionText = "Pick"
@@ -159,6 +224,9 @@ function FtueService.pickEgg(player: Player, index: number)
 		chosenCF = chosen and chosen.CFrame or nil
 		set:Destroy()
 		eggSets[player.UserId] = nil
+	end
+	if chosenCF then
+		crackShell(chosenCF, TableUtil.unpackColor(egg.color))
 	end
 
 	AnalyticsService.track("ftue_egg_selected", player, { egg = index, family = egg.family })

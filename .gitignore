@@ -25,3 +25,4 @@ art/build/*.fbx
 art/build/*.png
 art/build/sync.rbxmx
 art/previews/*.png
+art/build/world_export/

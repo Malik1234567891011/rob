@@ -81,6 +81,18 @@ function PropBuilder.build(ingredientId: string): Model?
 		if not model.PrimaryPart then
 			model.PrimaryPart = model:FindFirstChildWhichIsA("BasePart")
 		end
+		-- glowing ingredients (primitive spec says Neon): vertex colours carry the look,
+		-- a soft light sells the glow at night and in caves
+		local spec = def.model
+		local glowSpec = (spec.material == "Neon" and spec) or (spec.topper and spec.topper.material == "Neon" and spec.topper)
+		if glowSpec and model.PrimaryPart and not model.PrimaryPart:FindFirstChildOfClass("PointLight") then
+			local light = Instance.new("PointLight")
+			light.Color = TableUtil.unpackColor(glowSpec.color)
+			light.Brightness = 1.6
+			light.Range = 9
+			light.Shadows = false
+			light.Parent = model.PrimaryPart
+		end
 		model.Name = ingredientId
 		model:SetAttribute("Ingredient", ingredientId)
 		return model

@@ -287,6 +287,27 @@ def dots_mesh(spots, sides=6, sink=0.4):
     return fk.mesh_object(_name("dots"), bm)
 
 
+def decal_mesh(shape, spots, lift=0.012, sides=8):
+    """Soft round spots that hug a curved SDF surface (studs read as dents on big smooth forms)."""
+    bm = bmesh.new()
+    for p0, r in spots:
+        p, n = surface(shape, p0)
+        n, t, b = _frame(n)
+        c = bm.verts.new(p + n * lift * 1.8)
+        rings = []
+        for fr in (0.55, 1.0):
+            ring = []
+            for a in (2 * math.pi * i / sides for i in range(sides)):
+                q, qn = surface(shape, p + (t * math.cos(a) + b * math.sin(a)) * r * fr, iters=6)
+                ring.append(bm.verts.new(q + qn * lift))
+            rings.append(ring)
+        for i in range(sides):
+            j = (i + 1) % sides
+            bm.faces.new((c, rings[0][i], rings[0][j]))
+            bm.faces.new((rings[0][i], rings[1][i], rings[1][j], rings[0][j]))
+    return fk.mesh_object(_name("decal"), bm)
+
+
 def crystal_mesh(specs):
     """specs: [(base, direction, radius, length, sides, tip_frac, twist_deg)] -> faceted prisms."""
     bm = bmesh.new()
@@ -417,7 +438,7 @@ def build(name, pieces, ao=0.5, ao_dist=None, budget=TRI_TARGET):
     if over > 1:
         alloc = {i: max(16, v / over) for i, v in alloc.items()}
 
-    objs, spans = [], []
+    decimated = []
     for i, (o, pc, vox) in enumerate(meshed):
         target = pc.tris if pc.tris is not None else int(alloc[i])
         copies = 2 if pc.mirror else 1
@@ -425,6 +446,19 @@ def build(name, pieces, ao=0.5, ao_dist=None, budget=TRI_TARGET):
         o = _decimate(o, max(12, target // copies))
         if os.environ.get("KIT_DEBUG"):
             print(f"   piece {i}: raw {raw_tris} target {target} -> {fk.triangle_count(o)}")
+        decimated.append([o, pc, copies])
+    # hard budget guard: small pieces can stall above their share, so take the overflow
+    # back from the biggest piece that is still decimatable
+    for _ in range(4):
+        total = sum(fk.triangle_count(o) * c for o, _, c in decimated)
+        if total <= TRI_CAP - 20:
+            break
+        k = max(range(len(decimated)), key=lambda j: fk.triangle_count(decimated[j][0]) if decimated[j][1].obj is None else -1)
+        o, pc, c = decimated[k]
+        decimated[k][0] = _decimate(o, fk.triangle_count(o) - (total - (TRI_CAP - 30)) // c)
+
+    objs, spans = [], []
+    for o, pc, copies in decimated:
         M_inv = None
         if pc.post is not None:
             o.data.transform(pc.post)
@@ -684,10 +718,11 @@ def Carrot():
         for sgn in (-1, 1):
             leaves.append(leaf_shape(T(q), T(q + side * sgn * 0.42 + d * 0.22), 0.18, 0.045))
         leaves.append(leaf_shape(T(tip - d * 0.12), T(tip + d * 0.55), 0.22, 0.045))
+    small = M(scale=0.88)  # 2.4 studs long with the fronds
     return [
-        Piece(col, root, voxel=0.02),
-        Piece(H(0x4E9E34), U(*stalks, k=0.04), voxel=0.013, tris=110),
-        Piece(lambda co, n: mixc(H(0x3F9E36), H(0x86D054), ss(0.6, 1.2, co.z)), U(*leaves, k=0.03), voxel=0.012, weight=1.6),
+        Piece(col, root, voxel=0.02, post=small),
+        Piece(H(0x4E9E34), U(*stalks, k=0.04), voxel=0.013, tris=110, post=small),
+        Piece(lambda co, n: mixc(H(0x3F9E36), H(0x86D054), ss(0.6, 1.2, co.z)), U(*leaves, k=0.03), voxel=0.012, weight=1.6, post=small),
     ]
 
 @item
@@ -1207,7 +1242,7 @@ def Gear():
     holes = U(*[sdf.cylinder((0.42 * math.cos(a), 0.42 * math.sin(a), 0.16), 0.08, 0.3)
                 for a in (math.radians(45 + 90 * i) for i in range(4))], k=0.0)
     g = sdf.smooth_subtract(g, holes, k=0.03)
-    return [Piece(metal(H(0x8E9AA6), H(0xB5582A), 0.7, 3), g, voxel=0.016, post=M(rot=(28, 0, 0)))]
+    return [Piece(metal(H(0x6F7C88), H(0xB5582A), 0.7, 3), g, voxel=0.016, post=M(rot=(28, 0, 0)))]
 
 @item
 def ScrapMetal():
@@ -1230,8 +1265,8 @@ def ScrapMetal():
         p, nn = surface(sheet, (x, y, 1.0))
         rivets.append((rot @ p, rot.to_3x3() @ nn, 0.065, 0.045))
     return [
-        Piece(metal(H(0x7F8993), H(0xC0612B), 1.0, 2), sheet, voxel=0.02, post=rot),
-        Piece(metal(H(0x6E7882), H(0xB5562A), 0.8, 7), bracket, voxel=0.018, post=M((0.55, -0.1, 0.12), (0, -15, 35)), tris=140),
+        Piece(metal(H(0x5F6B76), H(0xC0612B), 1.0, 2), sheet, voxel=0.02, post=rot),
+        Piece(metal(H(0x56616B), H(0xB5562A), 0.8, 7), bracket, voxel=0.018, post=M((0.55, -0.1, 0.12), (0, -15, 35)), tris=140),
         Piece(metal(H(0x9A6A45), H(0xC0612B), 0.6, 5), pipe, voxel=0.016, post=M((-0.35, 0.55, 0.35), (0, 10, 25)), tris=150),
         Piece(H(0x4E555C), obj=dots_mesh(rivets, sides=6)),
     ]
@@ -1252,20 +1287,19 @@ def Magnet():
 
 @item
 def OilCan():
-    body = U(sdf.cylinder((0, 0, 0.38), 0.6, 0.38, rounding=0.12), sdf.round_cone((0, 0, 0.74), (0, 0, 1.18), 0.52, 0.14), k=0.12)
-    spout = chain(curve_points((0.1, 0, 1.05), (1.1, 0, 1.62), (0, 0, -0.08), 5), [0.11, 0.08, 0.065, 0.055, 0.05], k=0.03)
-    handle = sdf.torus((-0.6, 0, 0.64), 0.3, 0.07, rot=(90, 0, 0))
-    handle = sdf.smooth_subtract(handle, half_space((-0.6, 0, 0.64), (1, 0, 0)), k=0.02)
-    cap = sdf.cylinder((0, 0, 1.2), 0.17, 0.06, rounding=0.03)
-    drip = U(sdf.sphere((1.16, 0, 1.52), 0.07), sdf.ellipsoid((1.15, 0, 1.4), (0.055, 0.055, 0.09)), k=0.05)
+    body = U(sdf.cylinder((0, 0, 0.3), 0.66, 0.3, rounding=0.12), sdf.round_cone((0, 0, 0.55), (0, 0, 1.02), 0.6, 0.16), k=0.1)
+    collar = sdf.cylinder((0, 0, 1.06), 0.2, 0.08, rounding=0.04)
+    spout = chain(curve_points((0.05, 0, 1.08), (1.0, 0, 1.55), (0, 0, -0.1), 5), [0.13, 0.1, 0.085, 0.075, 0.07], k=0.03)
+    handle = sdf.torus((-0.55, 0, 0.62), 0.32, 0.085, rot=(90, 0, 0))
+    handle = sdf.smooth_subtract(handle, half_space((-0.55, 0, 0.62), (1, 0, 0)), k=0.02)
+    drip = U(sdf.sphere((1.06, 0, 1.44), 0.08), sdf.ellipsoid((1.05, 0, 1.3), (0.06, 0.06, 0.1)), k=0.05)
 
     def col(co, n):
-        c = metal(H(0xD8392F))(co, n)
-        return mixc(c, H(0xF6E7C0), ss(0.1, 0.075, abs(co.z - 0.42)))
+        return metal(H(0xD8392F))(co, n)
 
     return [
         Piece(col, body, voxel=0.02),
-        Piece(metal(H(0xD9A64A)), U(spout, handle, cap, k=0.02), voxel=0.014, tris=240),
+        Piece(metal(H(0xD9A64A)), U(spout, handle, collar, k=0.03), voxel=0.016, tris=260),
         Piece(H(0x1C1A22), drip, voxel=0.012, tris=50, hi=0.6),
     ]
 
@@ -1530,11 +1564,11 @@ def TrafficCone():
     base = sdf.round_box((0, 0, 0.08), (0.82, 0.82, 0.08), 0.06)
     orange, white = H(0xFF6A1F), H(0xFAFAF5)
     return [
-        Piece(orange, zslice(cone, 0.1, 0.72), voxel=0.02, tris=130),
-        Piece(white, zslice(cone, 0.72, 0.98), voxel=0.02, tris=90),
-        Piece(orange, zslice(cone, 0.98, 1.34), voxel=0.02, tris=90),
-        Piece(white, zslice(cone, 1.34, 1.56), voxel=0.02, tris=70),
-        Piece(orange, zslice(cone, 1.56, 2.2), voxel=0.02, tris=90),
+        Piece(orange, zslice(cone, 0.1, 0.72), voxel=0.02, tris=170),
+        Piece(white, zslice(cone, 0.72, 0.98), voxel=0.02, tris=110),
+        Piece(orange, zslice(cone, 0.98, 1.34), voxel=0.02, tris=130),
+        Piece(white, zslice(cone, 1.34, 1.56), voxel=0.02, tris=90),
+        Piece(orange, zslice(cone, 1.56, 2.2), voxel=0.02, tris=110),
         Piece(H(0xE0561A), base, voxel=0.02),
     ]
 
@@ -1616,56 +1650,55 @@ def CrystalShard():
 
 @item
 def Fish():
-    body = U(sdf.ellipsoid((0, 0, 0.26), (0.72, 0.46, 0.26)), sdf.ellipsoid((-0.3, 0, 0.26), (0.42, 0.4, 0.25)), k=0.2)
-    tail = U(sdf.ellipsoid((0.95, 0.2, 0.22), (0.3, 0.16, 0.06), rot=(0, 0, 38)),
-             sdf.ellipsoid((0.95, -0.2, 0.22), (0.3, 0.16, 0.06), rot=(0, 0, -38)), sdf.ellipsoid((0.7, 0, 0.24), (0.14, 0.1, 0.07)), k=0.08)
-    fins = U(sdf.ellipsoid((0.05, 0.48, 0.24), (0.34, 0.16, 0.05), rot=(0, 0, -12)),
-             sdf.ellipsoid((0.15, -0.44, 0.24), (0.18, 0.1, 0.05), rot=(0, 0, 15)),
-             sdf.ellipsoid((-0.12, -0.05, 0.5), (0.18, 0.08, 0.04), rot=(0, 20, 30)), k=0.02)
+    body = U(sdf.ellipsoid((0, 0, 0.28), (0.72, 0.48, 0.28)), sdf.ellipsoid((-0.3, 0, 0.28), (0.44, 0.42, 0.27)), k=0.2)
+    tail = U(sdf.ellipsoid((0.98, 0.22, 0.24), (0.34, 0.2, 0.07), rot=(0, 0, 38)),
+             sdf.ellipsoid((0.98, -0.22, 0.24), (0.34, 0.2, 0.07), rot=(0, 0, -38)), sdf.ellipsoid((0.72, 0, 0.26), (0.16, 0.12, 0.08)), k=0.08)
+    fins = U(sdf.ellipsoid((0.05, 0.5, 0.26), (0.38, 0.2, 0.06), rot=(0, 0, -12)),
+             sdf.ellipsoid((0.15, -0.46, 0.26), (0.2, 0.13, 0.06), rot=(0, 0, 15)),
+             sdf.ellipsoid((-0.05, -0.12, 0.56), (0.2, 0.1, 0.05), rot=(0, 20, 30)), k=0.02)
 
     def body_col(co, n):
-        c = mixc(H(0xF4F8FF), H(0x3F97D8), ss(-0.3, 0.2, co.y))
-        stripe = ss(0.06, 0.03, abs(co.x - 0.2)) + ss(0.05, 0.025, abs(co.x + 0.1))
-        return mixc(c, H(0x1F5EA8), stripe * 0.7 * ss(0.3, 0.6, n.z))
+        c = mixc(H(0xFFF6E8), H(0x3A95E0), ss(-0.42, -0.15, co.y))
+        stripe = ss(0.07, 0.04, abs(co.x - 0.2)) + ss(0.06, 0.03, abs(co.x + 0.12))
+        return mixc(c, H(0x1D4E9E), stripe * 0.8 * ss(0.2, 0.5, n.z) * ss(-0.3, -0.1, co.y))
 
-    eye_p, eye_n = surface(body, (-0.42, 0.08, 0.8))
-    pupil = (eye_p + eye_n * 0.035 + Vector((-0.02, 0, 0)), eye_n, 0.075, 0.03)
-    shine = (eye_p + eye_n * 0.06 + Vector((-0.04, 0.03, 0)), eye_n, 0.025, 0.01)
-    mouth_p, mouth_n = surface(body, (-1.0, -0.05, 0.3))
+    eye_p, eye_n = surface(body, (-0.44, 0.06, 0.9))
+    pupil = (eye_p + eye_n * 0.04 + Vector((-0.03, 0, 0)), eye_n, 0.1, 0.035)
+    shine = (eye_p + eye_n * 0.075 + Vector((-0.06, 0.04, 0)), eye_n, 0.035, 0.012)
+    mouth = []
+    for k in range(3):
+        p, nn = surface(body, (-1.0, -0.1 + k * 0.05, 0.42 + (0.03 if k == 1 else 0)))
+        mouth.append((p, nn, 0.035, 0.02))
     return [
         Piece(body_col, body, voxel=0.018, hi=0.3),
-        Piece(lambda co, n: mixc(H(0xFF9A3A), H(0xFFC46A), ss(0.3, 0.9, abs(co.x) + abs(co.y) * 0.3)), U(tail, fins, k=0.05),
+        Piece(lambda co, n: mixc(H(0xFF8A2A), H(0xFFC46A), ss(0.3, 0.9, abs(co.x) + abs(co.y) * 0.3)), U(tail, fins, k=0.05),
               voxel=0.012, weight=0.9),
-        Piece(H(0xFFFFFF), obj=dots_mesh([(eye_p, eye_n, 0.13, 0.05)], sides=10), lo=0.1),
+        Piece(H(0xFFFFFF), obj=dots_mesh([(eye_p, eye_n, 0.17, 0.06)], sides=10), lo=0.1),
         Piece(H(0x14141A), obj=dots_mesh([pupil], sides=8), lit=False),
         Piece(H(0xFFFFFF), obj=dots_mesh([shine], sides=5), lit=False),
-        Piece(H(0x7A2A3A), obj=dots_mesh([(mouth_p, mouth_n, 0.05, 0.02)], sides=6), lit=False),
+        Piece(H(0x7A2A3A), obj=dots_mesh(mouth, sides=5), lit=False),
     ]
-
 
 @item
 def Coal():
     rng = random.Random(11)
 
-    def lump(c, r, n=34):
+    def lump(c, r, n):
         pts = []
         for _ in range(n):
             v = Vector((rng.gauss(0, 1), rng.gauss(0, 1), rng.gauss(0, 1))).normalized()
-            s = rng.uniform(0.8, 1.05)
-            pts.append(Vector(c) + Vector((v.x * r[0], v.y * r[1], v.z * r[2])) * s)
+            pts.append(Vector(c) + Vector((v.x * r[0], v.y * r[1], v.z * r[2])) * rng.uniform(0.82, 1.04))
         return hull_mesh(pts)
 
-    big = lump((0, 0, 0.45), (0.6, 0.5, 0.45))
-    small = lump((0.62, -0.42, 0.2), (0.28, 0.25, 0.2), 20)
-    obj = fk.join([big, small], _name("coal"))
+    obj = fk.join([lump((0, 0, 0.45), (0.6, 0.5, 0.45), 70), lump((0.66, -0.42, 0.2), (0.28, 0.25, 0.2), 30),
+                   lump((-0.5, -0.45, 0.14), (0.18, 0.16, 0.14), 18)], _name("coal"))
 
     def col(co, n):
         r = random.Random(int((co.x * 97 + co.y * 57 + co.z * 31) * 1000)).random()
-        c = mixc(H(0x1B1B20), H(0x2C2E36), r)
-        return mixc(c, H(0x5A6272), ss(0.55, 0.95, n.z) * 0.8 * r)
+        c = mixc(H(0x1B1B20), H(0x30323A), r)
+        return mixc(c, H(0x6A7488), ss(0.6, 0.95, n.z) * r)
 
     return [Piece(col, obj=obj, flat=True, face=True, hi=0.1, lo=0.2)]
-
 
 def crack_slabs(center, radius, specs, width):
     out = []
@@ -1709,27 +1742,25 @@ def StarFragment():
 def MoonMushroom():
     stem = chain(curve_points((0, 0, 0.05), (0.05, 0, 0.75), (-0.08, 0, 0), 4), [0.2, 0.15, 0.13, 0.14], k=0.05)
     stem = U(stem, sdf.ellipsoid((0, 0, 0.08), (0.24, 0.24, 0.1)), k=0.1)
-    cap = sdf.ellipsoid((0.05, 0, 0.9), (0.62, 0.62, 0.5))
-    cap = sdf.smooth_subtract(cap, sdf.ellipsoid((0.05, 0, 0.64), (0.58, 0.58, 0.34)), k=0.08)
     capc = sdf.ellipsoid((0.05, 0, 0.9), (0.62, 0.62, 0.5))
+    cap = sdf.smooth_subtract(capc, sdf.ellipsoid((0.05, 0, 0.64), (0.58, 0.58, 0.34)), k=0.08)
     spots = []
-    for i, (a, zz, r) in enumerate(((20, 1.2, 0.09), (100, 1.05, 0.075), (200, 1.15, 0.085), (290, 1.0, 0.07),
-                                    (-40, 1.0, 0.06), (150, 1.32, 0.06), (250, 1.3, 0.05), (60, 1.32, 0.055))):
+    for a, zz, r in ((-60, 1.1, 0.1), (20, 1.2, 0.09), (100, 1.05, 0.08), (200, 1.15, 0.09), (290, 1.0, 0.08),
+                     (-110, 1.28, 0.07), (150, 1.32, 0.065), (250, 1.3, 0.06), (60, 1.32, 0.06)):
         ar = math.radians(a)
         p, nn = surface(capc, (0.05 + math.cos(ar), math.sin(ar), zz))
         spots.append((p, nn, r, 0.035))
 
     def cap_col(co, n):
         if n.z < -0.3:
-            return mixc(H(0x8FE8FF), H(0xCFF6FF), 0.5 + 0.5 * math.sin(math.atan2(co.y, co.x - 0.05) * 36))
-        return mixc(H(0xA9C8F5), H(0xDCEBFF), ss(0.9, 1.35, co.z))
+            return mixc(H(0x6FD8FF), H(0xBFF2FF), 0.5 + 0.5 * math.sin(math.atan2(co.y, co.x - 0.05) * 36))
+        return mixc(H(0x7FA8F0), H(0xB8D4FF), ss(0.9, 1.4, co.z))
 
     return [
-        Piece(lambda co, n: mixc(H(0xE4E0FF), H(0xF6F4FF), ss(0.1, 0.7, co.z)), stem, voxel=0.018, tris=180, glow=True),
-        Piece(cap_col, cap, voxel=0.02, glow=True, hi=0.2),
-        Piece(H(0xE8FCFF), obj=dots_mesh(spots, sides=7), glow=True, lit=False),
+        Piece(lambda co, n: mixc(H(0xCFD8FF), H(0xEDF0FF), ss(0.1, 0.7, co.z)), stem, voxel=0.018, tris=180, glow=True),
+        Piece(cap_col, cap, voxel=0.02, glow=True, hi=0.15),
+        Piece(H(0xC8FFFF), obj=dots_mesh(spots, sides=7), glow=True, lit=False),
     ]
-
 
 @item
 def Meteorite():
@@ -1737,17 +1768,17 @@ def Meteorite():
     rock = U(sdf.ellipsoid(c, (0.9, 0.78, 0.7)), sdf.ellipsoid((0.35, -0.2, 0.95), (0.45, 0.4, 0.38)), k=0.25)
     rock = sdf.noise_bumps(rock, amplitude=0.05, frequency=6.0, seed=8)
     craters = U(*[sdf.sphere(T(surface(rock, T(Vector(c) + Vector(d) * 2))[0] + Vector(d).normalized() * r * 0.55), r)
-                  for d, r in (((-0.6, -0.8, 0.5), 0.2), ((0.9, -0.2, 0.6), 0.16), ((-0.2, 0.2, 1.0), 0.14), ((0.2, -1.0, -0.1), 0.13))], k=0.0)
+                  for d, r in (((-0.6, -0.8, 0.5), 0.2), ((0.9, -0.2, 0.6), 0.16), ((-0.2, 0.2, 1.0), 0.14), ((0.5, -1.0, -0.1), 0.13))], k=0.0)
     rock = sdf.smooth_subtract(rock, craters, k=0.06)
-    veins = crack_slabs(c, 0.9, ((20, 60, (0, 0, 0.1)), (100, 75, (0.1, 0.1, 0)), (-50, 20, (0, 0, 0.25)), (160, 120, (-0.1, 0, -0.1))), 0.05)
+    veins = crack_slabs(c, 0.95, ((20, 60, (0, 0, 0.1)), (100, 75, (0.1, 0.1, 0)), (160, 120, (-0.1, 0, -0.1)),
+                                  (60, 100, (0, -0.2, 0.2)), (-60, 55, (0.2, 0, 0.1))), 0.075)
     rock = sdf.smooth_subtract(rock, veins, k=0.03)
     rock = sdf.smooth_subtract(rock, half_space((0, 0, 0.1), (0, 0, -1)), k=0.1)
-    core = sdf.ellipsoid(c, (0.8, 0.68, 0.6))
+    core = sdf.ellipsoid(c, (0.84, 0.72, 0.64))
     return [
-        Piece(lambda co, n: mixc(H(0x3A332E), H(0x5A5048), ss(0.3, 0.9, n.z) * 0.6 + 0.2 * wave(co, 8, 2)), rock, voxel=0.024),
-        Piece(lambda co, n: mixc(H(0x9A3CFF), H(0xE0A8FF), ss(0.5, 1.4, co.z)), core, voxel=0.03, glow=True, weight=0.5),
+        Piece(lambda co, n: mixc(H(0x3A332E), H(0x5A5048), ss(0.3, 0.9, n.z) * 0.6 + 0.2 * wave(co, 8, 2)), rock, voxel=0.022),
+        Piece(lambda co, n: mixc(H(0xA040FF), H(0xE8B8FF), ss(0.6, 1.4, co.z)), core, voxel=0.03, glow=True, weight=0.5),
     ]
-
 
 @item
 def CursedSandwich():
@@ -1797,21 +1828,798 @@ def Slime():
     blob = sdf.smooth_subtract(blob, half_space((0, 0, 0.0), (0, 0, -1)), k=0.03)
     eyes, shines = [], []
     for s in (-1, 1):
-        p, nn = surface(blob, (s * 0.24, -1.0, 0.62))
-        eyes.append((p, nn, 0.085, 0.04))
-        shines.append((p + nn * 0.04 + Vector((s * 0.0 - 0.02, 0, 0.03)), nn, 0.03, 0.012))
-    sp, sn = surface(blob, (-0.3, -0.3, 1.2))
+        p, nn = surface(blob, (s * 0.25, -1.0, 0.72))
+        eyes.append((p, nn, 0.12, 0.05))
+        shines.append((p + nn * 0.05 + Vector((-0.04, 0, 0.04)), nn, 0.04, 0.015))
+    sp, sn = surface(blob, (-0.35, -0.5, 1.2))
     return [
         Piece(lambda co, n: mixc(H(0x46C878), H(0x8DF0B0), ss(0.2, 0.95, co.z)), blob, voxel=0.02, hi=0.45),
         Piece(H(0x13201A), obj=dots_mesh(eyes, sides=8), lit=False),
-        Piece(H(0xFFFFFF), obj=dots_mesh(shines + [(sp, sn, 0.09, 0.02)], sides=6), lit=False, glow=True),
+        Piece(H(0xFFFFFF), obj=dots_mesh(shines, sides=6), lit=False, glow=True),
     ]
+
+def clam_half(rx, ry, depth, thick, ribs=14):
+    """Scalloped bowl, rim at z=0 opening +Z, hinge at +Y."""
+    outer = sdf.ellipsoid((0, 0, 0), (rx, ry, depth))
+
+    def fn(P):
+        a = np.arctan2(P[:, 0], P[:, 1] - ry * 0.9)
+        d = outer[0](P) - 0.025 * np.cos(a * ribs)
+        inner = sdf.ellipsoid((0, 0, thick * 1.2), (rx - thick, ry - thick, depth))[0](P)
+        return np.maximum(np.maximum(d, -inner), P[:, 2])
+
+    return (fn, (np.array([-rx - 0.05, -ry - 0.05, -depth - 0.05], dtype=F32), np.array([rx + 0.05, ry + 0.05, 0.05], dtype=F32)))
+
+
+@item
+def Pearl():
+    rx, ry, depth, thick = 0.78, 0.66, 0.34, 0.08
+    half = clam_half(rx, ry, depth, thick)
+    outer_fn = sdf.ellipsoid((0, 0, 0), (rx, ry, depth))[0]
+    inner_fn = sdf.ellipsoid((0, 0, thick * 1.2), (rx - thick, ry - thick, depth))[0]
+    hinge = Vector((0, 0.62, 0.34))
+    bottom = M((0, 0, 0.34))
+    top = M(hinge) @ M(rot=(-62, 0, 0)) @ M(-hinge) @ M((0, 0, 0.36)) @ M(rot=(180, 0, 0))
+
+    def shell_col(co, n):
+        P = np.array([T(co)], dtype=F32)
+        if abs(float(inner_fn(P)[0])) < abs(float(outer_fn(P)[0])) and co.z < -0.02:
+            return mixc(H(0xFFF0F6), H(0xE9D4F2), ss(0.15, 0.6, math.hypot(co.x, co.y)))
+        rib = 0.5 + 0.5 * math.cos(math.atan2(co.x, co.y - 0.6) * 14)
+        return mixc(H(0xDE8DB8), H(0xF7C6DC), rib * 0.6)
+
+    pearl = sdf.sphere((0, -0.08, 0.46), 0.26)
+    return [
+        Piece(shell_col, half, voxel=0.016, post=bottom),
+        Piece(shell_col, half, voxel=0.016, post=top),
+        Piece(lambda co, n: mixc(H(0xF3ECF6), H(0xFFFFFF), ss(0.2, 0.9, n.z - n.y * 0.3)), pearl, voxel=0.014, tris=160, hi=0.6),
+    ]
+
+@item
+def Coral():
+    rng = random.Random(21)
+    segs = []
+
+    def branch(p, d, length, r, depth):
+        end = p + d * length
+        segs.append(sdf.round_cone(T(p), T(end), r, r * 0.78))
+        if depth == 0:
+            segs.append(sdf.sphere(T(end), r * 0.95))
+            return
+        for sgn in (-1, 1):
+            axis = Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), 0)).normalized()
+            from mathutils import Quaternion
+            q = Quaternion(axis, math.radians(sgn * rng.uniform(24, 38)))
+            nd = (q @ d).normalized()
+            nd.z = max(nd.z, 0.35)
+            branch(end, nd.normalized(), length * rng.uniform(0.7, 0.85), r * 0.78, depth - 1)
+
+    branch(Vector((0, 0, 0)), Vector((0, 0, 1)), 0.55, 0.19, 3)
+    branch(Vector((0.1, 0.05, 0)), Vector((0.6, -0.2, 0.8)).normalized(), 0.4, 0.15, 2)
+    coral = U(*segs, sdf.ellipsoid((0, 0, 0.05), (0.35, 0.3, 0.1)), k=0.07)
+    return [Piece(lambda co, n: mixc(H(0xF0607F), H(0xFFB4C6), ss(0.4, 1.7, co.z)), coral, voxel=0.02, hi=0.3)]
+
+
+@item
+def Jellyfish():
+    dz = 1.3
+    dome = sdf.ellipsoid((0, 0, dz), (0.72, 0.72, 0.58))
+
+    def frill_cut(P):
+        a = np.arctan2(P[:, 1], P[:, 0])
+        return P[:, 2] - (dz - 0.06 + 0.06 * np.cos(a * 9))
+
+    bell = sdf.smooth_subtract(dome, (frill_cut, dome[1]), k=0.05)
+    bell = sdf.smooth_subtract(bell, sdf.ellipsoid((0, 0, dz - 0.2), (0.58, 0.58, 0.38)), k=0.05)
+    tent = []
+    for i in range(6):
+        a = math.radians(i * 60 + 15)
+        r0 = 0.48
+        pts = []
+        for k in range(6):
+            t = k / 5
+            rr = r0 * (1 - 0.25 * t)
+            aa = a + 0.35 * math.sin(t * 5 + i)
+            pts.append(Vector((rr * math.cos(aa), rr * math.sin(aa), (dz - 0.05) * (1 - t) + 0.05)))
+        tent.append(chain(pts, [0.07, 0.065, 0.06, 0.055, 0.05, 0.05], k=0.03))
+    arms = []
+    for i in range(3):
+        a = math.radians(i * 120)
+        pts = [Vector((0.15 * math.cos(a + 0.6 * math.sin(t * 6)), 0.15 * math.sin(a + 0.6 * math.sin(t * 6)), dz - 0.1 - t * 0.85))
+               for t in (k / 5 for k in range(6))]
+        arms.append(chain(pts, [0.12, 0.13, 0.12, 0.1, 0.09, 0.07], k=0.05))
+    spots = []
+    for i in range(7):
+        a = math.radians(i * 51)
+        p, nn = surface(dome, (math.cos(a), math.sin(a), dz + 0.35 + 0.15 * (i % 2)))
+        spots.append((p, nn, 0.07, 0.025))
+
+    def bell_col(co, n):
+        c = mixc(H(0xB58CF5), H(0xE6D6FF), ss(dz, dz + 0.55, co.z))
+        return mixc(c, H(0x8A5AE0), ss(dz + 0.12, dz - 0.05, co.z))
+
+    return [
+        Piece(bell_col, bell, voxel=0.02, hi=0.35, lo=0.1),
+        Piece(lambda co, n: mixc(H(0xC8A8FF), H(0xE9DDFF), ss(0.1, 1.1, co.z)), U(*tent, k=0.02), voxel=0.016, weight=0.8, lo=0.1),
+        Piece(lambda co, n: mixc(H(0xD68CF0), H(0xF4C8FF), ss(0.3, 1.1, co.z)), U(*arms, k=0.03), voxel=0.018, tris=160, lo=0.1),
+        Piece(H(0xFFE0F4), obj=dots_mesh(spots, sides=6), lit=False, glow=True),
+    ]
+
+
+@item
+def Seashell():
+    def col(co, n):
+        a = math.atan2(co.x, co.z)
+        r = math.hypot(co.x, co.z)
+        rib = 0.5 + 0.5 * math.cos(a * 16)
+        c = mixc(H(0xF29A6A), H(0xFFE2C4), rib * 0.7)
+        band = ss(0.6, 0.9, math.sin(r * 20))
+        c = mixc(c, H(0xE0664A), band * 0.35 * ss(0.2, 0.4, r))
+        return mixc(c, H(0xFFF3E4), ss(0.35, 0.05, r) * 0.6)
+
+    return [Piece(col, scallop(), voxel=0.014, post=M((0, 0, 0), (-22, 0, 0)), hi=0.3)]
+
+@item
+def Kelp():
+    blades, floats = [], []
+    specs = ((0.0, 0.0, 2.1, 0.0, 0), (0.22, 0.12, 1.6, 0.9, 20), (-0.2, 0.1, 1.8, 2.1, -25), (0.05, -0.2, 1.3, 3.3, 10))
+    for x, y, L, ph, lean in specs:
+        rb = sdf.round_box((0, 0, L / 2), (0.17, 0.04, L / 2), 0.035)
+
+        def wiggle(P, ph=ph, L=L, x=x, y=y, lean=lean):
+            Q = P.copy()
+            Q[:, 0] -= x + 0.14 * np.sin(P[:, 2] * 3.2 + ph) * (P[:, 2] / L) + math.sin(math.radians(lean)) * P[:, 2] * 0.35
+            Q[:, 1] -= y + 0.08 * np.cos(P[:, 2] * 2.4 + ph)
+            w = 1.0 - 0.45 * np.clip(P[:, 2] / L, 0, 1) ** 2
+            Q[:, 0] /= w
+            return Q
+
+        blades.append(sdf.warp(rb, wiggle, pad=0.45))
+        floats.append(sdf.sphere((x + math.sin(math.radians(lean)) * 0.2, y + 0.06, 0.55 + 0.1 * ph % 0.3), 0.085))
+    hold = sdf.noise_bumps(U(sdf.ellipsoid((0, 0, 0.1), (0.4, 0.35, 0.14)), sdf.ellipsoid((0.15, -0.1, 0.18), (0.18, 0.16, 0.12)), k=0.1),
+                           amplitude=0.02, frequency=12, seed=6)
+    return [
+        Piece(lambda co, n: mixc(H(0x4E7F24), H(0xB0CC4A), ss(0.2, 2.0, co.z)), U(*blades, k=0.02), voxel=0.013, weight=1.0),
+        Piece(H(0xC9A83A), U(*floats, k=0.0), voxel=0.012, tris=90, hi=0.4),
+        Piece(H(0x5E5A2A), hold, voxel=0.016, tris=110),
+    ]
+
+
+@item
+def Starfish():
+    arm_star = extrude2d(star2d(0.92, 0.42), (-1, -1, 1, 1), 0.13, rounding=0.12, center=(0, 0, 0))
+    star = U(arm_star, sdf.ellipsoid((0, 0, 0.02), (0.36, 0.36, 0.2)), k=0.2)
+
+    def curl(P):
+        Q = P.copy()
+        r = np.hypot(P[:, 0], P[:, 1])
+        Q[:, 2] -= 0.1 * (r / 0.9) ** 2
+        return Q
+
+    star = sdf.warp(star, curl, pad=0.2)
+    star = xform(star, loc=(0, 0, 0.16), rot=(0, 0, 18))
+    bumps = []
+    for i in range(5):
+        a = math.radians(90 + 18 + i * 72)
+        for k, rr in enumerate((0.25, 0.45, 0.63, 0.78)):
+            p, nn = surface(star, (rr * math.cos(a), rr * math.sin(a), 0.8))
+            bumps.append((p, nn, 0.055 - k * 0.007, 0.035))
+    p, nn = surface(star, (0, 0, 0.9))
+    bumps.append((p, nn, 0.06, 0.035))
+    return [
+        Piece(lambda co, n: mixc(H(0xF26A2E), H(0xFF9C5A), ss(0.1, 0.35, co.z)), star, voxel=0.016, hi=0.3),
+        Piece(H(0xFFE2B8), obj=dots_mesh(bumps, sides=5), lo=0.1),
+    ]
+
+
+@item
+def Crab():
+    body = sdf.ellipsoid((0, 0, 0.45), (0.62, 0.46, 0.32))
+    body = sdf.smooth_subtract(body, half_space((0, 0, 0.2), (0, 0, -1)), k=0.08)
+    stalks = sdf.mirror_x(U(sdf.round_cone((0.16, -0.25, 0.66), (0.22, -0.34, 0.95), 0.06, 0.045), k=0.02))
+    arms = sdf.mirror_x(chain([(0.5, -0.12, 0.45), (0.75, -0.3, 0.5), (0.85, -0.5, 0.62)], [0.09, 0.08, 0.08], k=0.04))
+    claw = U(sdf.ellipsoid((0.9, -0.62, 0.72), (0.22, 0.26, 0.2), rot=(0, 0, -20)), k=0.0)
+    claw = sdf.smooth_subtract(claw, sdf.ellipsoid((0.96, -0.86, 0.76), (0.14, 0.2, 0.05), rot=(0, 0, -20)), k=0.03)
+    claws = sdf.mirror_x(claw)
+    legs = []
+    for y in (-0.05, 0.15, 0.33):
+        legs.append(chain([(0.45, y, 0.3), (0.78, y + 0.12, 0.3), (0.92, y + 0.2, 0.03)], [0.06, 0.05, 0.045], k=0.03))
+    legs = sdf.mirror_x(U(*legs, k=0.02))
+    whites = sdf.mirror_x(sdf.sphere((0.22, -0.36, 1.0), 0.11))
+    pupils = [(Vector((s * 0.23, -0.47, 1.01)), Vector((0, -1, 0.1)), 0.055, 0.025) for s in (-1, 1)]
+    smile = []
+    for k in range(5):
+        x = -0.12 + k * 0.06
+        p, nn = surface(body, (x, -1.0, 0.44 - 0.04 * (1 - abs(x) / 0.12)))
+        smile.append((p, nn, 0.032, 0.02))
+    blush = []
+    for s in (-1, 1):
+        p, nn = surface(body, (s * 0.3, -1.0, 0.5))
+        blush.append((p, nn, 0.07, 0.015))
+    red = H(0xE8483A)
+    return [
+        Piece(lambda co, n: mixc(red, H(0xFF7F5E), ss(0.4, 0.9, n.z) * 0.5), U(body, stalks, k=0.05), voxel=0.018),
+        Piece(lambda co, n: mixc(H(0xD83A2E), H(0xFF8A66), ss(0.5, 0.9, co.z)), U(arms, claws, legs, k=0.04), voxel=0.016, weight=0.9),
+        Piece(H(0xFFFFFF), whites, voxel=0.012, tris=80, lo=0.1),
+        Piece(H(0x15151A), obj=dots_mesh(pupils + smile, sides=6), lit=False),
+        Piece(H(0xFF9AA8), obj=dots_mesh(blush, sides=6), lit=False),
+    ]
+
+
+def scallop(R=0.9, spread=0.95, ribs=16):
+    def fn(P):
+        x, y, z = P[:, 0], P[:, 1], P[:, 2]
+        a = np.arctan2(x, z)
+        r = np.hypot(x, z)
+        d2 = np.maximum(r - (R + 0.035 * np.cos(a * ribs)), (np.abs(a) - spread) * np.maximum(r, 0.15))
+        d2 = np.minimum(d2, box2d(0.3, 0.09)(x, z - 0.09))
+        bulge = np.clip(1 - (r / (R * 1.05)) ** 2, 0, 1) * np.clip(r / 0.25, 0, 1)
+        th = 0.05 + 0.16 * bulge + 0.025 * np.cos(a * ribs) * np.clip(r / 0.3, 0, 1)
+        dy = np.abs(y + th * 0.5) - th * 0.5
+        rr = 0.02
+        d2 = d2 + rr
+        dy = dy + rr
+        return np.sqrt(np.maximum(d2, 0) ** 2 + np.maximum(dy, 0) ** 2) + np.minimum(np.maximum(d2, dy), 0) - rr
+    return (fn, (np.array([-R - 0.1, -0.3, -0.1], dtype=F32), np.array([R + 0.1, 0.1, R + 0.1], dtype=F32)))
+
+
+@item
+def SunkenCoin():
+    face_rot = (90, 0, 0)
+    c = (0, 0, 0.72)
+
+    def wobble(P):
+        return P
+
+    coin = sdf.cylinder(c, 0.72, 0.11, rot=face_rot, rounding=0.06)
+    coin = (lambda P, s=coin: s[0](P) + 0.02 * np.sin(np.arctan2(P[:, 2] - 0.72, P[:, 0]) * 5), coin[1])
+    coin = sdf.smooth_subtract(coin, sdf.cylinder((0, -0.13, 0.72), 0.56, 0.035, rot=face_rot), k=0.02)
+    coin = sdf.smooth_subtract(coin, sdf.cylinder((0, 0.13, 0.72), 0.56, 0.035, rot=face_rot), k=0.02)
+    cross = U(sdf.round_box((0, -0.1, 0.72), (0.08, 0.04, 0.34), 0.03), sdf.round_box((0, -0.1, 0.72), (0.34, 0.04, 0.08), 0.03),
+              *[sdf.sphere((0.36 * sx, -0.1, 0.72 + 0.36 * sz), 0.07) for sx, sz in ((1, 1), (-1, 1), (1, -1), (-1, -1))], k=0.02)
+
+    def gold(co, n):
+        c_ = mixc(H(0xA8700E), H(0xFFC83A), ss(0.0, 0.8, n.z * 0.5 - n.y * 0.5 + 0.1))
+        return mixc(c_, H(0x4F9A7A), ss(0.4, 0.75, wave(co, 9, 4)) * 0.8)
+
+    return [
+        Piece(gold, coin, voxel=0.016, post=M((0, 0, 0), (-16, 0, 12)), hi=0.4),
+        Piece(lambda co, n: mixc(H(0xE8B032), H(0xFFE27A), ss(0.2, 0.9, -n.y)), cross, voxel=0.013, tris=170,
+              post=M((0, 0, 0), (-16, 0, 12)), hi=0.4),
+    ]
+
+
+@item
+def Amethyst():
+    rock = sdf.noise_bumps(U(sdf.ellipsoid((0, 0, 0.2), (0.72, 0.58, 0.3)), sdf.ellipsoid((-0.3, 0.2, 0.3), (0.35, 0.3, 0.25)), k=0.2),
+                           amplitude=0.04, frequency=8, seed=12)
+    rock = sdf.smooth_subtract(rock, half_space((0, 0, 0.02), (0, 0, -1)), k=0.05)
+    specs = [((0.05, 0, 0.3), (0.05, -0.1, 1), 0.26, 1.35, 6, 0.3, 0), ((0.35, 0.05, 0.28), (0.55, 0.0, 1), 0.2, 1.0, 6, 0.32, 20),
+             ((-0.28, -0.08, 0.3), (-0.5, -0.2, 1), 0.2, 0.95, 6, 0.33, 10), ((0.1, 0.3, 0.3), (0.1, 0.6, 1), 0.17, 0.8, 6, 0.35, 5),
+             ((-0.05, -0.35, 0.22), (0.0, -0.8, 1), 0.15, 0.7, 6, 0.36, 30), ((0.45, -0.3, 0.2), (0.7, -0.6, 1), 0.12, 0.55, 5, 0.4, 0),
+             ((-0.45, 0.25, 0.3), (-0.6, 0.5, 1), 0.13, 0.6, 5, 0.38, 12)]
+
+    def col(co, n):
+        r = random.Random(int((co.x * 71 + co.y * 43 + co.z * 29) * 1000)).random()
+        c = mixc(H(0x7B3FC4), H(0xC89BFF), ss(0.3, 1.5, co.z))
+        c = mixc(c, H(0xE8D4FF), ss(0.4, 0.9, -n.y * 0.6 - n.x * 0.3 + n.z * 0.3) * 0.6)
+        return mixc(c, richer(c, 0.4), r * 0.4)
+
+    return [
+        Piece(col, obj=crystal_mesh(specs), flat=True, face=True, hi=0.1, lo=0.2),
+        Piece(lambda co, n: mixc(H(0x6E6258), H(0x938678), ss(0.2, 0.9, n.z)), rock, voxel=0.02, tris=380),
+    ]
+
+
+@item
+def Glowworm():
+    pts = [Vector(p) for p in ((0.75, 0.3, 0.1), (0.45, 0.5, 0.12), (0.05, 0.4, 0.14), (-0.15, 0.05, 0.15),
+                               (0.05, -0.25, 0.16), (-0.1, -0.5, 0.3), (-0.35, -0.5, 0.52))]
+    radii = [0.17, 0.13, 0.13, 0.14, 0.14, 0.14, 0.15]
+    body = chain(pts, radii, k=0.06)
+    bulb = sdf.sphere((0.8, 0.32, 0.18), 0.22)
+    hc = Vector((-0.42, -0.52, 0.66))
+    head = sdf.ellipsoid(T(hc), (0.19, 0.18, 0.18))
+    body = U(body, head, k=0.1)
+    ant = sdf.mirror_x(U(chain([(0.07, 0, 0.14), (0.14, -0.02, 0.32)], 0.025, k=0.01), sdf.sphere((0.14, -0.02, 0.34), 0.05), k=0.02))
+    ant = xform(ant, loc=T(hc), rot=(0, 0, 0))
+
+    def col(co, n):
+        t = polyline_t(pts, co)
+        ring = ss(0.7, 0.95, math.sin(t * 60))
+        c = mixc(H(0x3E9A3A), H(0x9CFF6A), ss(0.9, 0.2, t))
+        return mixc(c, H(0xD8FFB0), ring * 0.5 * ss(0.8, 0.3, t))
+
+    eyes = []
+    for s in (-1, 1):
+        p, nn = surface(body, T(hc + Vector((s * 0.09, -0.3, 0.04))))
+        eyes.append((p, nn, 0.045, 0.025))
+    return [
+        Piece(col, body, voxel=0.018, glow=True),
+        Piece(lambda co, n: mixc(H(0xC8FF7A), H(0xF4FFD8), ss(0.1, 0.35, co.z)), bulb, voxel=0.016, tris=150, glow=True),
+        Piece(H(0x3E8A36), ant, voxel=0.012, tris=60),
+        Piece(H(0x10180E), obj=dots_mesh(eyes, sides=6), lit=False),
+    ]
+
+
+@item
+def Geode():
+    c = Vector((0, 0, 0.7))
+    rock = sdf.noise_bumps(sdf.ellipsoid(T(c), (0.8, 0.72, 0.72)), amplitude=0.04, frequency=7, seed=5)
+    cut_n = Vector((0, -0.75, 0.66)).normalized()
+    rock = sdf.smooth_subtract(rock, half_space(T(c + cut_n * 0.12), T(cut_n)), k=0.03)
+    cavity = sdf.noise_bumps(sdf.ellipsoid(T(c + cut_n * 0.05), (0.56, 0.5, 0.5)), amplitude=0.035, frequency=18, seed=2)
+    geode = sdf.smooth_subtract(rock, cavity, k=0.02)
+    geode = sdf.smooth_subtract(geode, half_space((0, 0, 0.05), (0, 0, -1)), k=0.08)
+    outer_fn = sdf.ellipsoid(T(c), (0.8, 0.72, 0.72))[0]
+    cav_fn = sdf.ellipsoid(T(c + cut_n * 0.05), (0.56, 0.5, 0.5))[0]
+
+    def col(co, n):
+        P = np.array([T(co)], dtype=F32)
+        dc = float(cav_fn(P)[0])
+        if dc < 0.05:
+            s_ = 0.5 + 0.5 * wave(co, 20, 3)
+            return mixc(mixc(H(0x6A2FB8), H(0xC48AFF), ss(-0.1, 0.05, dc)), H(0xEAD8FF), s_ * 0.35)
+        if (co - c).dot(cut_n) > 0.08 and dc < 0.16:
+            return H(0xF4EEF8)
+        return mixc(H(0x7E7266), H(0xA39686), ss(0.2, 0.9, n.z) * 0.6 + 0.2 * wave(co, 9, 1))
+
+    return [Piece(col, geode, voxel=0.018)]
+
+
+@item
+def Fossil():
+    disc = sdf.noise_bumps(sdf.ellipsoid((0, 0, 0.8), (0.82, 0.28, 0.8)), amplitude=0.02, frequency=8, seed=9)
+    pts, radii = [], []
+    for i in range(34):
+        th = 0.3 + i * 0.3
+        rho = 0.06 * math.exp(0.2 * th)
+        pts.append(Vector((rho * math.cos(th), -0.2, 0.8 + rho * math.sin(th))))
+        radii.append(0.45 * rho + 0.025)
+    tube = chain(pts, radii, k=0.02)
+
+    def ribs(P):
+        a = np.arctan2(P[:, 2] - 0.8, P[:, 0])
+        rr = np.hypot(P[:, 2] - 0.8, P[:, 0])
+        return tube[0](P) + 0.022 * np.clip(rr / 0.3, 0, 1) * np.cos(a * 26)
+
+    shell = (ribs, tube[1])
+
+    def shell_col(co, n):
+        a = math.atan2(co.z - 0.8, co.x)
+        return mixc(H(0xF2E2C0), H(0xB0906A), ss(0.2, 0.9, math.cos(a * 26)) * 0.8)
+
+    def stone_col(co, n):
+        return mixc(H(0x9C8C78), H(0xC4B49A), ss(0.2, 0.9, -n.y * 0.4 + n.z * 0.6) + 0.15 * wave(co, 10, 2))
+
+    lean = M((0, 0, 0), (-18, 0, 0))
+    return [
+        Piece(stone_col, disc, voxel=0.02, post=lean, weight=0.7),
+        Piece(shell_col, shell, voxel=0.013, post=lean, weight=1.4),
+    ]
+
+@item
+def CaveMoss():
+    rock = sdf.noise_bumps(U(sdf.ellipsoid((0, 0, 0.18), (0.75, 0.6, 0.26)), sdf.ellipsoid((0.3, 0.15, 0.28), (0.35, 0.3, 0.22)), k=0.2),
+                           amplitude=0.03, frequency=8, seed=3)
+    rock = sdf.smooth_subtract(rock, half_space((0, 0, 0.02), (0, 0, -1)), k=0.05)
+    rng = random.Random(17)
+    puffs = []
+    for i in range(34):
+        a = i * math.pi * (3 - math.sqrt(5))
+        rr = math.sqrt((i + 0.5) / 34) * 0.66
+        x, y = rr * math.cos(a) * 1.05, rr * math.sin(a) * 0.9
+        q = max(0.0, 1 - (x / 0.8) ** 2 - (y / 0.65) ** 2)
+        z = 0.18 + 0.28 * math.sqrt(q)
+        puffs.append(sdf.sphere((x, y, z), rng.uniform(0.12, 0.19) * (0.7 + 0.3 * math.sqrt(q))))
+    moss = U(*puffs, k=0.07)
+    sprouts = U(*[U(chain([(x, y, 0.45), (x + dx, y, 0.78)], 0.03, k=0.01), sdf.sphere((x + dx, y, 0.8), 0.065), k=0.02)
+                  for x, y, dx in ((-0.12, -0.1, -0.05), (0.22, -0.05, 0.06), (0.05, 0.22, 0.0))], k=0.0)
+
+    def moss_col(co, n):
+        return mixc(mixc(H(0x23857B), H(0x4FC0AA), ss(0.25, 0.6, co.z)), H(0x9CEBD6), ss(0.3, 0.8, wave(co, 16, 6)) * 0.45)
+
+    return [
+        Piece(lambda co, n: mixc(H(0x4F5560), H(0x6A7280), ss(0.2, 0.9, n.z)), rock, voxel=0.02, tris=180),
+        Piece(moss_col, moss, voxel=0.016, weight=1.2),
+        Piece(lambda co, n: mixc(H(0x2E8A7A), H(0xB8FFEA), ss(0.7, 0.8, co.z)), sprouts, voxel=0.012, tris=110),
+    ]
+
+@item
+def Glowcap():
+    mound = sdf.noise_bumps(sdf.ellipsoid((0, 0, 0.02), (0.55, 0.45, 0.14)), amplitude=0.02, frequency=10, seed=7)
+    stems, caps, spots = [], [], []
+    for (x, y, h, r, lean) in ((0.0, 0.05, 0.85, 0.3, 0), (0.32, -0.18, 0.55, 0.22, 18), (-0.3, -0.12, 0.45, 0.19, -20)):
+        top = Vector((x + math.sin(math.radians(lean)) * h * 0.4, y, h))
+        stems.append(chain(curve_points((x, y, 0.05), T(top), (0.03, 0, 0), 3), [0.08 * r / 0.3 + 0.03, 0.07 * r / 0.3 + 0.02, 0.06 * r / 0.3 + 0.02], k=0.02))
+        cap = U(sdf.ellipsoid(T(top + Vector((0, 0, r * 0.35))), (r, r, r * 0.75)),
+                sdf.round_cone(T(top + Vector((0, 0, r * 0.4))), T(top + Vector((0, 0, r * 1.25))), r * 0.55, r * 0.12), k=r * 0.3)
+        cap = sdf.smooth_subtract(cap, sdf.ellipsoid(T(top + Vector((0, 0, r * 0.05))), (r * 0.9, r * 0.9, r * 0.4)), k=0.03)
+        caps.append(cap)
+        for k in range(4):
+            a = math.radians(k * 90 + 30)
+            p, nn = surface(cap, T(top + Vector((math.cos(a), math.sin(a), 0.9))))
+            spots.append((p, nn, r * 0.16, 0.02))
+    return [
+        Piece(lambda co, n: mixc(H(0x2E2A3A), H(0x4A4258), ss(0.3, 0.9, n.z)), mound, voxel=0.018, tris=120),
+        Piece(lambda co, n: mixc(H(0xD8C8F0), H(0xF2EAFF), ss(0.1, 0.6, co.z)), U(*stems, k=0.0), voxel=0.012, tris=150, glow=True),
+        Piece(lambda co, n: mixc(H(0x9A48F0), H(0xD9A8FF), ss(0.2, 0.9, n.z)), U(*caps, k=0.0), voxel=0.014, glow=True),
+        Piece(H(0xF4E0FF), obj=dots_mesh(spots, sides=5), glow=True, lit=False),
+    ]
+
+
+@item
+def Cookie():
+    cookie = U(sdf.cylinder((0, 0, 0.17), 0.7, 0.14, rounding=0.12), sdf.ellipsoid((0, 0, 0.24), (0.6, 0.6, 0.12)), k=0.1)
+    cookie = sdf.noise_bumps(cookie, amplitude=0.018, frequency=11, seed=5)
+    bite = U(sdf.sphere((-0.72, -0.35, 0.2), 0.2), sdf.sphere((-0.5, -0.62, 0.2), 0.19), sdf.sphere((-0.8, -0.05, 0.2), 0.15), k=0.0)
+    cookie = sdf.smooth_subtract(cookie, bite, k=0.02)
+    rng = random.Random(8)
+    chips = []
+    for i in range(11):
+        a = i * 2.4 + rng.uniform(-0.3, 0.3)
+        rr = 0.12 + 0.5 * math.sqrt((i + 0.3) / 11)
+        x, y = rr * math.cos(a), rr * math.sin(a)
+        if bite[0](np.array([[x, y, 0.2]], dtype=F32))[0] < 0.06:
+            continue
+        p, nn = surface(cookie, (x, y, 1.0))
+        chips.append(sdf.ellipsoid(T(p + nn * 0.01), (0.085, 0.08, 0.06), rot=(0, 0, rng.uniform(0, 90))))
+
+    def col(co, n):
+        c = mixc(H(0xC98A48), H(0xE8B878), ss(0.1, 0.8, n.z))
+        return mixc(c, H(0xA86A30), ss(0.35, 0.8, wave(co, 13, 2)) * 0.4)
+
+    return [
+        Piece(col, cookie, voxel=0.016, post=M(rot=(-14, 6, 0))),
+        Piece(lambda co, n: mixc(H(0x3A2014), H(0x6A4028), ss(0.4, 1.0, n.z)), U(*chips, k=0.0), voxel=0.012, tris=200,
+              post=M(rot=(-14, 6, 0)), hi=0.4),
+    ]
+
+
+@item
+def Cupcake():
+    def pleat(P):
+        base = sdf.round_cone((0, 0, 0.06), (0, 0, 0.62), 0.42, 0.56)[0](P)
+        return base + 0.025 * np.cos(np.arctan2(P[:, 1], P[:, 0]) * 18)
+
+    wrap = (pleat, (np.array([-0.62, -0.62, 0], dtype=F32), np.array([0.62, 0.62, 0.7], dtype=F32)))
+    wrap = zslice(wrap, 0.0, 0.64)
+    cake = sdf.ellipsoid((0, 0, 0.66), (0.56, 0.56, 0.16))
+    frost = U(sdf.torus((0, 0, 0.78), 0.44, 0.17), sdf.torus((0.02, 0, 0.99), 0.31, 0.15), sdf.torus((0.03, 0, 1.18), 0.18, 0.12),
+              sdf.round_cone((0.03, 0, 1.2), (0.06, 0, 1.42), 0.14, 0.05), sdf.ellipsoid((0, 0, 0.82), (0.45, 0.45, 0.2)), k=0.08)
+    cherry = sdf.sphere((0.05, -0.02, 1.52), 0.16)
+    stem = chain(curve_points((0.06, 0, 1.62), (0.22, 0.12, 1.9), (0, 0, 0.04), 4), 0.028, k=0.01)
+    rng = random.Random(4)
+    spr = {0: [], 1: [], 2: []}
+    for i in range(18):
+        a = rng.uniform(0, 2 * math.pi)
+        zz = rng.uniform(0.8, 1.3)
+        p, nn = surface(frost, (math.cos(a) * 1.2, math.sin(a) * 1.2, zz + 0.3))
+        spr[i % 3].append((p, nn, 0.04, 0.025))
+    return [
+        Piece(lambda co, n: mixc(H(0x7FBEEB), H(0xCDEBFF), 0.5 + 0.5 * math.cos(math.atan2(co.y, co.x) * 18)), wrap, voxel=0.016, tris=210),
+        Piece(H(0xB06A3A), cake, voxel=0.02, tris=40),
+        Piece(lambda co, n: mixc(H(0xFF8FBF), H(0xFFD0E4), ss(0.2, 0.9, n.z)), frost, voxel=0.018, weight=1.0),
+        Piece(H(0xE01E3C), cherry, voxel=0.013, tris=110, hi=0.6),
+        Piece(H(0x5A7A2A), stem, voxel=0.01, tris=40),
+        Piece(H(0xFFE14A), obj=dots_mesh(spr[0], sides=4), lit=False),
+        Piece(H(0x5AC8FF), obj=dots_mesh(spr[1], sides=4), lit=False),
+        Piece(H(0xFFFFFF), obj=dots_mesh(spr[2], sides=4), lit=False),
+    ]
+
+
+@item
+def Cheese():
+    tip, b1, b2 = (-0.9, 0.0), (0.62, -0.62), (0.62, 0.62)
+
+    def tri(x, y):
+        def edge(a, b):
+            ex, ey = b[0] - a[0], b[1] - a[1]
+            L = math.hypot(ex, ey)
+            return ((x - a[0]) * ey - (y - a[1]) * ex) / L
+        d = np.maximum(np.maximum(edge(tip, b1), edge(b1, b2)), edge(b2, tip))
+        return d
+
+    wedge = extrude2d(tri, (-1, -1, 1, 1), 0.38, rounding=0.07, center=(0, 0, 0.38))
+    holes = []
+    rng = random.Random(6)
+    for p0, r in (((-0.1, -0.1, 0.8), 0.14), ((0.3, 0.2, 0.8), 0.18), ((-0.45, 0.05, 0.8), 0.09), ((0.25, -0.62, 0.35), 0.15),
+                  ((-0.2, -0.36, 0.5), 0.11), ((0.66, 0.1, 0.4), 0.16), ((0.0, 0.42, 0.25), 0.12), ((0.45, -0.25, 0.8), 0.1)):
+        p, nn = surface(wedge, p0)
+        holes.append(sdf.sphere(T(p - nn * r * 0.2), r))
+    wedge = sdf.smooth_subtract(wedge, U(*holes, k=0.0), k=0.03)
+
+    def col(co, n):
+        rind = ss(0.52, 0.6, co.x) * ss(0.5, 0.9, n.x)
+        c = mixc(H(0xFFC83D), H(0xFFE07A), ss(0.3, 0.9, n.z))
+        return mixc(c, H(0xF09A1A), rind)
+
+    return [Piece(col, wedge, voxel=0.018, post=M(rot=(0, 0, -25)))]
+
+
+@item
+def Sock():
+    # a flat L: leg along +Y, heel at the corner, foot along +X; tipped up so the player sees its face
+    leg = sdf.round_box((-0.3, 0.42, 0.0), (0.3, 0.58, 0.14), 0.13)
+    foot = sdf.round_box((0.18, -0.34, 0.0), (0.56, 0.28, 0.14), 0.13)
+    heel = sdf.ellipsoid((-0.36, -0.3, 0.0), (0.32, 0.36, 0.15))
+    toe = sdf.ellipsoid((0.66, -0.34, 0.0), (0.2, 0.28, 0.14))
+    sock = U(leg, foot, heel, toe, k=0.18)
+    cuff = sdf.round_box((-0.3, 1.02, 0.0), (0.33, 0.12, 0.16), 0.1)
+
+    def col(co, n):
+        if (co - Vector((-0.4, -0.36, 0))).length < 0.3 or co.x > 0.55:
+            return H(0x2E6FD0)
+        s_ = co.y if co.y > -0.05 else -co.x
+        return mixc(H(0xF8F4EC), H(0xE8403A), ss(-0.25, 0.25, math.sin(s_ * 17)))
+
+    post = M((0, 0, 0.5), (40, 0, 12))
+    return [
+        Piece(col, sock, voxel=0.018, post=post),
+        Piece(lambda co, n: mixc(H(0xF8F4EC), H(0xD8D0C4), 0.5 + 0.5 * math.sin(co.x * 40)), cuff, voxel=0.016, post=post, tris=120),
+    ]
+
+@item
+def Balloon():
+    body = U(sdf.ellipsoid((0, 0, 1.78), (0.64, 0.64, 0.76)), sdf.round_cone((0, 0, 1.05), (0, 0, 1.5), 0.08, 0.45), k=0.25)
+    knot = U(sdf.round_cone((0, 0, 0.92), (0, 0, 1.06), 0.1, 0.06), k=0.0)
+    string = chain(curve_points((0, 0, 0.95), (0.18, -0.1, 0.02), (0.25, 0.1, 0), 7), 0.035, k=0.01)
+    hp, hn = surface(body, (-0.6, -0.8, 2.3))
+
+    def col(co, n):
+        return mixc(H(0xD81E34), H(0xFF4A58), ss(0.2, 0.9, n.z - n.y * 0.3))
+
+    return [
+        Piece(col, body, voxel=0.024, hi=0.55),
+        Piece(H(0xC0182C), knot, voxel=0.012, tris=60),
+        Piece(H(0xF2EEE6), string, voxel=0.012, tris=90),
+    ]
+
+
+def xslice(shape, x0, x1):
+    return (lambda P: np.maximum(shape[0](P), np.maximum(x0 - P[:, 0], P[:, 0] - x1)), shape[1])
+
+
+@item
+def Crayon():
+    L = 0.85
+    wax = U(sdf.cylinder((0, 0, 0), 0.26, L, rot=(0, 90, 0), rounding=0.05),
+            sdf.round_cone((L - 0.05, 0, 0), (L + 0.45, 0, 0), 0.24, 0.07), k=0.03)
+    paper = sdf.cylinder((-0.1, 0, 0), 0.285, 0.64, rot=(0, 90, 0), rounding=0.02)
+    purple, dark, label = H(0x6A30B8), H(0x2A1448), H(0xE6D8FF)
+    post = M((0, 0, 0.28), (0, -4, 28))
+    bands = ((-0.8, -0.58, dark), (-0.58, -0.22, purple), (-0.22, 0.02, label), (0.02, 0.36, purple), (0.36, 0.6, dark))
+    return [Piece(lambda co, n: mixc(H(0x9A5AE8), H(0xC09AF8), ss(0.3, 0.9, n.z) * 0.4), wax, voxel=0.016, post=post, tris=330)] + \
+        [Piece(c, xslice(paper, a, b), voxel=0.014, post=post, tris=100, hi=0.15) for a, b, c in bands]
+
+
+@item
+def Bell():
+    bell = U(sdf.round_cone((0, 0, 0.28), (0, 0, 1.0), 0.62, 0.3), sdf.sphere((0, 0, 1.0), 0.32),
+             sdf.torus((0, 0, 0.2), 0.6, 0.1), k=0.12)
+    bell = sdf.smooth_subtract(bell, sdf.round_cone((0, 0, 0.0), (0, 0, 0.85), 0.55, 0.2), k=0.05)
+    bell = sdf.smooth_subtract(bell, half_space((0, 0, 0.1), (0, 0, -1)), k=0.02)
+    clapper = U(sdf.sphere((0.05, -0.1, 0.18), 0.13), sdf.capsule((0, 0, 0.8), (0.05, -0.1, 0.2), 0.04), k=0.03)
+    handle = U(sdf.cylinder((0, 0, 1.55), 0.13, 0.28, rounding=0.05), sdf.sphere((0, 0, 1.9), 0.19), k=0.08)
+    collar = sdf.cylinder((0, 0, 1.28), 0.18, 0.06, rounding=0.03)
+
+    def gold(co, n):
+        h = n.z * 0.6 - n.y * 0.3 - n.x * 0.3 + 0.1 * wave(co, 4, 1)
+        c = mixc(H(0x9A6A10), H(0xF2B830), ss(-0.35, 0.25, h))
+        c = mixc(c, H(0xFFF0A0), ss(0.45, 0.75, h) * 0.8)
+        return mixc(c, H(0x7A5208), ss(0.32, 0.2, co.z) * 0.5)
+
+    return [
+        Piece(gold, bell, voxel=0.018, lit=False),
+        Piece(metal(H(0x9A7A30)), U(clapper, collar, k=0.0), voxel=0.014, tris=110),
+        Piece(lambda co, n: mixc(H(0x8A4E2A), H(0xB87444), ss(0.2, 0.9, n.z)), handle, voxel=0.016, tris=150),
+    ]
+
+@item
+def RubberBoot():
+    shaft = sdf.round_box((0, 0.2, 0.92), (0.34, 0.38, 0.64), 0.22)
+    foot = sdf.round_box((0, -0.22, 0.26), (0.34, 0.58, 0.24), 0.22)
+    boot = U(shaft, foot, k=0.22)
+    boot = sdf.smooth_subtract(boot, sdf.ellipsoid((0, 0.2, 1.6), (0.24, 0.28, 0.3)), k=0.05)
+    upper = sdf.smooth_subtract(boot, half_space((0, 0, 0.14), (0, 0, -1)), k=0.02)
+    sole = zslice(sdf.offset(boot, 0.025), 0.0, 0.16)
+    rim = stretch(sdf.torus((0, 0.2, 1.5), 0.3, 0.06), (0, 0.2, 1.5), (1.05, 0.9, 1.0))
+
+    def col(co, n):
+        return mixc(H(0xF5B814), H(0xFFDC4A), ss(0.1, 0.8, n.z * 0.5 - n.y * 0.5 + 0.2))
+
+    return [
+        Piece(col, upper, voxel=0.022),
+        Piece(H(0x5A4636), sole, voxel=0.018, tris=150),
+        Piece(H(0xFFE88A), rim, voxel=0.014, tris=110),
+    ]
+
+@item
+def Obsidian():
+    rng = random.Random(33)
+
+    def shard(base, top, w, n, flat=0.7):
+        pts = [Vector(top)]
+        b = Vector(base)
+        ax = Vector(top) - b
+        for i in range(n):
+            t = rng.uniform(0.0, 0.8) ** 1.4
+            a = rng.uniform(0, 2 * math.pi)
+            r = w * (1 - t * 0.85) * rng.uniform(0.75, 1.0)
+            pts.append(b + ax * t + Vector((math.cos(a) * r, math.sin(a) * r * flat, 0)))
+        return hull_mesh(pts)
+
+    obj = fk.join([shard((0, 0, 0), (0.1, -0.05, 1.55), 0.55, 40), shard((0.5, 0.15, 0), (0.85, 0.25, 0.8), 0.34, 22),
+                   shard((-0.5, -0.1, 0), (-0.7, -0.2, 0.62), 0.3, 18)], _name("obs"))
+
+    def col(co, n):
+        r = random.Random(int((co.x * 83 + co.y * 61 + co.z * 37) * 1000)).random()
+        c = mixc(H(0x141019), H(0x2A2238), r)
+        c = mixc(c, H(0x6A5AA8), ss(0.3, 0.9, -n.y * 0.5 - n.x * 0.5) * 0.7)
+        return mixc(c, H(0xD8D0FF), ss(0.8, 0.97, n.z * 0.4 - n.y * 0.6 - n.x * 0.3) * 0.8)
+
+    return [Piece(col, obj=obj, flat=True, face=True, hi=0.2, lo=0.1)]
+
+@item
+def CloudBerry():
+    rng = random.Random(9)
+    puffs = [sdf.sphere((0, 0, 0.55), 0.42)]
+    golden = math.pi * (3 - math.sqrt(5))
+    for i in range(22):
+        z = 1 - 2 * (i + 0.5) / 22
+        rr = math.sqrt(1 - z * z)
+        a = i * golden
+        if z < -0.6:
+            continue
+        puffs.append(sdf.sphere((0.42 * rr * math.cos(a), 0.42 * rr * math.sin(a), 0.55 + 0.42 * z), rng.uniform(0.17, 0.22)))
+    berry = U(*puffs, k=0.07)
+    leaves = []
+    for i in range(5):
+        a = math.radians(i * 72 + 10)
+        leaves.append(leaf_shape((0.05 * math.cos(a), 0.05 * math.sin(a), 1.12), (0.42 * math.cos(a), 0.42 * math.sin(a), 1.02), 0.12, 0.035))
+    stem = chain(curve_points((0, 0, 1.08), (0.08, 0.05, 1.35), (0.03, 0, 0.02), 3), 0.045, k=0.01)
+    return [
+        Piece(lambda co, n: mixc(H(0x9CC4F5), H(0xFBFDFF), ss(0.2, 1.0, co.z) * 0.7 + ss(-0.2, 0.8, n.z) * 0.3), berry, voxel=0.018, hi=0.3),
+        Piece(H(0x5FB08A), U(*leaves, stem, k=0.03), voxel=0.012, tris=170),
+    ]
+
+
+@item
+def AlienGoo():
+    puddle = U(sdf.ellipsoid((0, 0, 0.05), (0.8, 0.62, 0.08)), sdf.ellipsoid((0.6, 0.35, 0.04), (0.35, 0.25, 0.07)),
+               sdf.ellipsoid((-0.55, -0.35, 0.04), (0.32, 0.28, 0.07)), sdf.ellipsoid((-0.35, 0.5, 0.04), (0.24, 0.18, 0.06)),
+               sdf.ellipsoid((0.3, -0.25, 0.1), (0.35, 0.3, 0.12)), k=0.2)
+    puddle = sdf.smooth_subtract(puddle, half_space((0, 0, 0.0), (0, 0, -1)), k=0.02)
+    bubble = sdf.sphere((-0.1, 0.05, 0.22), 0.36)
+    small = U(sdf.sphere((0.45, -0.1, 0.18), 0.14), sdf.sphere((0.95, -0.35, 0.05), 0.07), sdf.sphere((-0.9, 0.1, 0.05), 0.06), k=0.0)
+    hp, hn = surface(bubble, (-0.4, -0.3, 0.8))
+    return [
+        Piece(lambda co, n: mixc(H(0x7EDB1A), H(0xC8FF4A), ss(0.02, 0.18, co.z)), U(puddle, small, k=0.08), voxel=0.016, glow=True),
+        Piece(lambda co, n: mixc(H(0xB0FF50), H(0xEEFFB8), ss(0.2, 0.55, co.z)), bubble, voxel=0.016, tris=200, glow=True, hi=0.4),
+        Piece(H(0xFFFFFF), obj=dots_mesh([(hp, hn, 0.08, 0.02)], sides=6), lit=False, glow=True),
+    ]
+
+
+EGG_C, EGG_R = 1.52, (1.0, 1.0, 1.42)
+
+
+def egg_shape(c=EGG_C, r=EGG_R, taper=0.16):
+    base = sdf.ellipsoid((0, 0, c), r)
+
+    def fn(P):
+        Q = P.copy()
+        f = 1.0 - taper * np.clip((P[:, 2] - c) / r[2], -1, 1)
+        Q[:, 0] = P[:, 0] / f
+        Q[:, 1] = P[:, 1] / f
+        return base[0](Q) * np.minimum(f, 1.0)
+
+    return (fn, (np.array([-r[0] * 1.2, -r[1] * 1.2, c - r[2] - 0.05], dtype=F32), np.array([r[0] * 1.2, r[1] * 1.2, c + r[2] + 0.05], dtype=F32)))
+
+
+def make_egg(base_hex, spot_hex, seed):
+    egg = egg_shape()
+    tilt = M((0, 0, 0.1), (5, -6, 0))
+    rng = random.Random(seed)
+    spots = []
+    golden = math.pi * (3 - math.sqrt(5))
+    for i in range(11):
+        z = 0.9 - 1.45 * (i + 0.5) / 11
+        rr = math.sqrt(max(0.0, 1 - z * z))
+        a = i * golden + rng.uniform(-0.3, 0.3)
+        spots.append(((2.5 * rr * math.cos(a), 2.5 * rr * math.sin(a), EGG_C + 2.0 * z), rng.uniform(0.13, 0.25)))
+    straws = []
+    for i in range(30):
+        a = i * 2 * math.pi / 30 + rng.uniform(-0.1, 0.1)
+        rr = rng.uniform(0.62, 0.9)
+        cx, cy = rr * math.cos(a), rr * math.sin(a)
+        ta = a + math.pi / 2 + rng.uniform(-0.6, 0.6)
+        L = rng.uniform(0.28, 0.42)
+        z = rng.uniform(0.05, 0.2)
+        straws.append(sdf.capsule((cx - math.cos(ta) * L, cy - math.sin(ta) * L, z + rng.uniform(-0.04, 0.08)),
+                                  (cx + math.cos(ta) * L, cy + math.sin(ta) * L, z + rng.uniform(-0.04, 0.12)), rng.uniform(0.055, 0.075)))
+    straw = U(*straws, k=0.02)
+    base_c, spot_c = H(base_hex), H(spot_hex)
+
+    def egg_col(co, n):
+        return mixc(richer(base_c, 0.15), lighter(base_c, 0.18), ss(0.4, 2.6, co.z))
+
+    return [
+        Piece(egg_col, egg, voxel=0.035, post=tilt, weight=1.0, hi=0.3),
+        Piece(spot_c, obj=decal_mesh(egg, spots), post=tilt, hi=0.3),
+        Piece(lambda co, n: mixc(H(0xC8963A), H(0xF2D27A), ss(0.05, 0.25, co.z) * 0.7 + 0.3 * (0.5 + 0.5 * wave(co, 20, 1))),
+              straw, voxel=0.016, tris=210),
+    ]
+
+
+@item
+def Egg_Pink():
+    return make_egg(0xF4A0C0, 0xFFCFE2, 1)
+
+
+@item
+def Egg_Grey():
+    return make_egg(0xA3ABB6, 0xD6DCE4, 2)
+
+
+@item
+def Egg_Purple():
+    return make_egg(0xAE84DE, 0xD8C4F8, 3)
+
+
+EGG_CRACK_Z, EGG_CRACK_AMP, EGG_TEETH = 1.62, 0.17, 8
+
+
+def shell_parts(upper):
+    egg = egg_shape()
+    inner = egg_shape(r=(EGG_R[0] - 0.09, EGG_R[1] - 0.09, EGG_R[2] - 0.09))
+
+    def fn(P):
+        shell = np.maximum(egg[0](P), -inner[0](P))
+        a = np.arctan2(P[:, 1], P[:, 0]) * EGG_TEETH / (2 * math.pi)
+        tri = 2 * np.abs(a - np.floor(a) - 0.5) * 2 - 1
+        f = (P[:, 2] - (EGG_CRACK_Z + EGG_CRACK_AMP * tri)) * 0.55
+        return np.maximum(shell, -f if upper else f)
+
+    return (fn, egg[1])
+
+
+def eggshell_col(co, n):
+    inner = egg_shape(r=(EGG_R[0] - 0.09, EGG_R[1] - 0.09, EGG_R[2] - 0.09))
+    d = float(inner[0](np.array([T(co)], dtype=F32))[0])
+    if d < 0.03:
+        return H(0xEDE0C4)
+    return mixc(H(0xF3ECDC), H(0xFFFCF4), ss(0.2, 2.6, co.z))
+
+
+@item
+def EggShell_Top():
+    return [Piece(eggshell_col, shell_parts(True), voxel=0.024, hi=0.25)]
+
+
+@item
+def EggShell_Bottom():
+    return [Piece(eggshell_col, shell_parts(False), voxel=0.024, hi=0.25)]
 
 
 # ═══ ORDER (ingredient ids — these ARE the FBX object names) ══════════════════════
 
 ORDER = [
-    "Apple", "Strawberry", "Watermelon", "Blueberry", "Carrot", "Pumpkin", "Daisy", "Sunflower",
+    # Meadow
+    "Apple", "Strawberry", "Watermelon", "Blueberry", "Carrot", "Pumpkin", "Daisy", "Sunflower", "Clover", "Beetle",
+    "Butterfly", "Worm", "Stick", "Acorn", "MudClump", "Pebble", "RubberDuck", "BouncyBall", "ToyBlock", "Honeycomb",
+    "Mushroom", "Feather",
+    # Junkyard
+    "Battery", "Gear", "ScrapMetal", "Magnet", "OilCan", "BrokenTV", "Spring", "Bolt", "Wire", "Tire", "SodaCan",
+    "Lightbulb", "CircuitBoard", "Clock", "Toaster", "TrafficCone", "Fan",
+    # Strange / rare
+    "IceCube", "Bone", "CrystalShard", "Fish", "Coal", "LavaFruit", "StarFragment", "MoonMushroom", "Meteorite",
+    "CursedSandwich", "Slime",
+    # New ingredients
+    "Pearl", "Coral", "Jellyfish", "Seashell", "Kelp", "Starfish", "Crab", "SunkenCoin", "Amethyst", "Glowworm", "Geode",
+    "Fossil", "CaveMoss", "Glowcap", "Cookie", "Cupcake", "Cheese", "Sock", "Balloon", "Crayon", "Bell", "RubberBoot",
+    "Obsidian", "CloudBerry", "AlienGoo",
+    # Hatching
+    "Egg_Pink", "Egg_Grey", "Egg_Purple", "EggShell_Top", "EggShell_Bottom",
 ]
 
 
@@ -1881,7 +2689,7 @@ def render_sheet(objs, out, cols=5, tile=280, render_res=None):
         fk.look_setup(target=T(c), distance=d, yaw=-30, pitch=24, lens=50)
         path = os.path.join(tmp, f"{o.name}.png")
         fk.render_png(path, res=(res, res))
-        tiles.append((path, f"{len(tiles) + 1}. {o.name}  {fk.triangle_count(o)}"))
+        tiles.append((path, f"{len(tiles) + 1}. {o.name}" + (f"  {fk.triangle_count(o)}" if tile >= 250 else "")))
     for p in objs:
         p.hide_render = False
     spec = os.path.join(tmp, "spec.json")
@@ -1934,7 +2742,7 @@ def render_scale_lineup(objs, out):
         o.location = (x, 0, 0)
         x += w / 2
     width = x + 1.0
-    cam = fk.look_setup(target=(width / 2 - 0.6, 0, 1.6), distance=width * 0.62, yaw=0, pitch=8, lens=50)
+    fk.look_setup(target=(width / 2 - 0.6, 0, 1.6), distance=width * 1.45, yaw=0, pitch=6, lens=50)
     sc = bpy.context.scene
     fk.render_png(out, res=(1400, 380))
     for o in objs:

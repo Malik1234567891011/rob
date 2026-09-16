@@ -1,16 +1,37 @@
 {
+  "art/build/cute_body_Blocky.fbx": {
+    "assetId": "120076261859533",
+    "at": 1789547421,
+    "name": "FAM cute_body_Blocky",
+    "sha": "79d4815787c882d3",
+    "type": "Model"
+  },
+  "art/build/cute_body_Bulb.fbx": {
+    "assetId": "97300970125071",
+    "at": 1789547458,
+    "name": "FAM cute_body_Bulb",
+    "sha": "55c689b9c098b0dd",
+    "type": "Model"
+  },
   "art/build/cute_body_Round.fbx": {
-    "assetId": "88048221812630",
-    "at": 1789546340,
+    "assetId": "134032137357199",
+    "at": 1789547399,
     "name": "FAM cute_body_Round",
-    "sha": "2f40d580b818ec3b",
+    "sha": "2b32c05a91586908",
+    "type": "Model"
+  },
+  "art/build/cute_body_Snouted.fbx": {
+    "assetId": "126169939483479",
+    "at": 1789547436,
+    "name": "FAM cute_body_Snouted",
+    "sha": "6207fbd8f2702937",
     "type": "Model"
   },
   "art/build/cute_parts.fbx": {
-    "assetId": "116296879253365",
-    "at": 1789546346,
+    "assetId": "88319550145722",
+    "at": 1789547486,
     "name": "FAM cute_parts",
-    "sha": "d59623d7fd541cd5",
+    "sha": "d3a106ddbc3118d6",
     "type": "Model"
   },
   "art/build/probe_ear.fbx": {
@@ -35,10 +56,10 @@
     "type": "Model"
   },
   "art/build/sync.rbxmx": {
-    "assetId": "78829600861065",
-    "at": 1789546622,
+    "assetId": "92973645331234",
+    "at": 1789547527,
     "name": "FAM code sync",
-    "sha": "e518c2640dfef023",
+    "sha": "d24a68fd3dc76dfe",
     "type": "Model"
   }
 }

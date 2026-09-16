@@ -409,11 +409,12 @@ def skin(obj, arm, bones, falloff=0.35, rigid=None, max_influences=4, custom=Non
     """Distance-based skin weights restricted to `bones`.
 
     rigid: bone name -> every vertex fully weighted to that bone (eyes, horns...).
-    custom: fn(co) -> {bone: weight} overrides the distance model for that vertex when it
-            returns a non-empty dict (used for jaw/cheek regions on bodies)."""
+    custom: fn(co, weights) -> weights. Receives the distance-model weights (normalised)
+            and may return a modified dict (used to blend a jaw region smoothly)."""
     for g in list(obj.vertex_groups):
         obj.vertex_groups.remove(g)
-    groups = {b: obj.vertex_groups.new(name=b) for b in (bones if not rigid else [rigid])}
+    names = [rigid] if rigid else list(bones)
+    groups = {b: obj.vertex_groups.new(name=b) for b in names}
     segs = bone_segments(arm)
     mw = obj.matrix_world
     for v in obj.data.vertices:
@@ -421,13 +422,15 @@ def skin(obj, arm, bones, falloff=0.35, rigid=None, max_influences=4, custom=Non
             groups[rigid].add([v.index], 1.0, "REPLACE")
             continue
         p = mw @ v.co
-        weights = custom(p) if custom else None
-        if not weights:
-            weights = {}
-            for bname in bones:
-                a, b = segs[bname]
-                d, _ = _seg_dist(p, a, b)
-                weights[bname] = 1.0 / (1e-4 + (d / falloff) ** 4)
+        weights = {}
+        for bname in bones:
+            a, b = segs[bname]
+            d, _ = _seg_dist(p, a, b)
+            weights[bname] = 1.0 / (1e-4 + (d / falloff) ** 4)
+        total = sum(weights.values()) or 1.0
+        weights = {k: w / total for k, w in weights.items()}
+        if custom:
+            weights = custom(p, weights) or weights
         top = sorted(weights.items(), key=lambda kv: -kv[1])[:max_influences]
         total = sum(w for _, w in top) or 1.0
         for bname, w in top:
@@ -442,6 +445,11 @@ def skin(obj, arm, bones, falloff=0.35, rigid=None, max_influences=4, custom=Non
     return obj
 
 
+def smoothstep(a, b, x):
+    t = max(0.0, min(1.0, (x - a) / (b - a)))
+    return t * t * (3 - 2 * t)
+
+
 # ═══ EXPORT ═══════════════════════════════════════════════════════════════════
 
 def export_fbx(objs, filename):
@@ -452,6 +460,13 @@ def export_fbx(objs, filename):
     for o in objs:
         o.select_set(True)
     bpy.context.view_layer.objects.active = objs[0]
+    import contextlib, io
+    with contextlib.redirect_stdout(io.StringIO()):
+        _export_fbx_quiet(path)
+    return path
+
+
+def _export_fbx_quiet(path):
     bpy.ops.export_scene.fbx(
         filepath=path,
         use_selection=True,
@@ -463,7 +478,6 @@ def export_fbx(objs, filename):
         colors_type="SRGB",
         use_armature_deform_only=False,
     )
-    return path
 
 
 # ═══ LOOKING AT THINGS ════════════════════════════════════════════════════════

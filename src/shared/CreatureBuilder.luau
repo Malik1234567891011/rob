@@ -366,6 +366,9 @@ function CreatureBuilder.build(genome, lod: number?): Model
 		end
 	end
 
+	local mouthDef = (Anatomy.parts.Mouth or {})[ctx.parts.Mouth or ""]
+	model:SetAttribute("RestJaw", mouthDef and mouthDef.restJaw or 0)
+
 	-- glow (SPEC §43: rare mutations should be recognisable across a server)
 	local skinDef = Anatomy.skins[ctx.skin or "Soft"]
 	local glow = math.max(ctx.glow or 0, skinDef and skinDef.glow or 0)

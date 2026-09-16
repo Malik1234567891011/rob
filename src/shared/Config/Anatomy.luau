@@ -74,7 +74,7 @@ Anatomy.parts = {
 		Smile  = { display = "Smile" },
 		Fangs  = { display = "Fangs" },
 		Beak   = { display = "Beak", style = { Beak = { color = 0xF2A93B, skin = false } } },
-		Gaping = { display = "Gaping Maw" },
+		Gaping = { display = "Gaping Maw", restJaw = 14 },
 	},
 
 	Ears = {

@@ -30,16 +30,14 @@ local function shareMoment(kind: string)
 	end
 	pcall(function()
 		(CaptureService :: any):CaptureScreenshot(function(contentId)
+			Net.event("Moment"):FireServer({ kind = kind, step = "capture" })
 			pcall(function()
-				(CaptureService :: any):PromptShareCapture(contentId, "", function() end, function() end)
+				(CaptureService :: any):PromptShareCapture(contentId, "", function()
+					Net.event("Moment"):FireServer({ kind = kind, step = "share" })
+				end, function() end)
 			end)
 		end)
 	end)
-	local okA = pcall(function()
-		Net.event("Moment") -- analytics are server-side on real sessions; no-op here
-	end)
-	local _ = okA
-	local _k = kind
 end
 
 function Overlays.shareButton(label: string, kind: string, parent: Instance, pos: UDim2)

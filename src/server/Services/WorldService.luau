@@ -238,7 +238,85 @@ local function gateMarker(id: string): BasePart?
 	return m and m:FindFirstChild("Gate_" .. id) :: BasePart?
 end
 
+local gatesById: { [string]: any } = {}
+
+-- The one gate rule, used by the world prompt AND Net TryGate (and tests).
+-- Returns { ok, opened?, already?, missing? }.
+function WorldService.tryGate(player: Player, gateId: string)
+	local gate = gatesById[gateId]
+	local marker = gateMarker(gateId)
+	if not gate or not marker then
+		return { ok = false, reason = "no such gate" }
+	end
+	if gate.update and updateLevel() < gate.update then
+		return { ok = false, reason = "not yet released" }
+	end
+	local profile = PlayerDataService.get(player)
+	if not profile then
+		return { ok = false, reason = "no profile" }
+	end
+	profile.gatesOpened = profile.gatesOpened or {}
+	if profile.gatesOpened[gate.id] then
+		Net.event("Toast"):FireClient(player, { kind = "gate", title = "ALREADY FOUND", label = gate.success, color = 0x5FD98C })
+		Net.event("WorldNotice"):FireClient(player, { kind = "gate_open", gate = gate.id, instant = true })
+		return { ok = true, already = true }
+	end
+	local have: { [string]: boolean } = {}
+	local helpers: { Player } = {}
+	if gate.coop then
+		local okP, Party = pcall(require, script.Parent.PartyService)
+		if okP then
+			have, helpers = Party.abilitiesNear(player, marker.Position, 30)
+		end
+	else
+		local g = PlayerDataService.activeCreature(player)
+		have = g and g.abilities or {}
+	end
+	local missing = {}
+	for _, a in ipairs(gate.abilities) do
+		if not have[a] then
+			local def = Mutations.abilities[a]
+			table.insert(missing, def and (def.emoji .. " " .. def.display) or a)
+		end
+	end
+	if #missing > 0 then
+		Net.event("Toast"):FireClient(player, {
+			kind = "gate_locked", title = gate.coop and "NEEDS A TEAM" or "NOT YET",
+			label = gate.prompt,
+			sub = "Needs " .. table.concat(missing, " + ") .. (gate.coop and " (party members nearby count!)" or ""),
+			color = 0x8C8478,
+		})
+		return { ok = false, reason = "missing", missing = missing }
+	end
+	local recipients = { player }
+	for _, h in ipairs(helpers) do
+		table.insert(recipients, h)
+	end
+	for _, p in ipairs(recipients) do
+		local prof = PlayerDataService.get(p)
+		if prof and not (prof.gatesOpened or {})[gate.id] then
+			prof.gatesOpened = prof.gatesOpened or {}
+			prof.gatesOpened[gate.id] = true
+			PlayerDataService.stat(p, "gatesOpened")
+			for _, ingredientId in ipairs(gate.reward) do
+				PlayerDataService.give(p, ingredientId, 1)
+			end
+			PlayerDataService.addCurrency(p, gate.coop and Economy.rewards.partyGate or Economy.rewards.gateOpened)
+			AnalyticsService.track("biome_unlock", p, { gate = gate.id, coop = gate.coop == true })
+			GameEvents.fire(p, "gate_opened", { gate = gate.id, coop = gate.coop == true })
+			Net.event("Toast"):FireClient(p, {
+				kind = "gate", title = gate.coop and "🤝 TEAMWORK" or "OPENED",
+				label = gate.success, sub = "You found something inside.", color = 0xFFD52E,
+			})
+			Net.event("WorldNotice"):FireClient(p, { kind = "gate_open", gate = gate.id })
+			PlayerDataService.sync(p)
+		end
+	end
+	return { ok = true, opened = true, helpers = #helpers }
+end
+
 local function buildGate(gate)
+	gatesById[gate.id] = gate
 	local marker = gateMarker(gate.id)
 	if not marker then
 		return
@@ -258,70 +336,11 @@ local function buildGate(gate)
 	prompt.HoldDuration = 0.4
 	prompt.MaxActivationDistance = 16
 	prompt.RequiresLineOfSight = false
+	prompt:SetAttribute("Gate", gate.id)
 	prompt.Parent = marker
 
 	prompt.Triggered:Connect(function(player)
-		local profile = PlayerDataService.get(player)
-		if not profile then
-			return
-		end
-		profile.gatesOpened = profile.gatesOpened or {}
-		if profile.gatesOpened[gate.id] then
-			Net.event("Toast"):FireClient(player, { kind = "gate", title = "ALREADY FOUND", label = gate.success, color = 0x5FD98C })
-			Net.event("WorldNotice"):FireClient(player, { kind = "gate_open", gate = gate.id })
-			return
-		end
-		local have: { [string]: boolean } = {}
-		local helpers: { Player } = {}
-		if gate.coop then
-			local okP, Party = pcall(require, script.Parent.PartyService)
-			if okP then
-				have, helpers = Party.abilitiesNear(player, marker.Position, 30)
-			end
-		else
-			local g = PlayerDataService.activeCreature(player)
-			have = g and g.abilities or {}
-		end
-		local missing = {}
-		for _, a in ipairs(gate.abilities) do
-			if not have[a] then
-				local def = Mutations.abilities[a]
-				table.insert(missing, def and (def.emoji .. " " .. def.display) or a)
-			end
-		end
-		if #missing > 0 then
-			Net.event("Toast"):FireClient(player, {
-				kind = "gate_locked", title = gate.coop and "NEEDS A TEAM" or "NOT YET",
-				label = gate.prompt,
-				sub = "Needs " .. table.concat(missing, " + ") .. (gate.coop and " (party members nearby count!)" or ""),
-				color = 0x8C8478,
-			})
-			return
-		end
-		local recipients = { player }
-		for _, h in ipairs(helpers) do
-			table.insert(recipients, h)
-		end
-		for _, p in ipairs(recipients) do
-			local prof = PlayerDataService.get(p)
-			if prof and not (prof.gatesOpened or {})[gate.id] then
-				prof.gatesOpened = prof.gatesOpened or {}
-				prof.gatesOpened[gate.id] = true
-				PlayerDataService.stat(p, "gatesOpened")
-				for _, ingredientId in ipairs(gate.reward) do
-					PlayerDataService.give(p, ingredientId, 1)
-				end
-				PlayerDataService.addCurrency(p, gate.coop and Economy.rewards.partyGate or Economy.rewards.gateOpened)
-				AnalyticsService.track("biome_unlock", p, { gate = gate.id, coop = gate.coop == true })
-				GameEvents.fire(p, "gate_opened", { gate = gate.id, coop = gate.coop == true })
-				Net.event("Toast"):FireClient(p, {
-					kind = "gate", title = gate.coop and "🤝 TEAMWORK" or "OPENED",
-					label = gate.success, sub = "You found something inside.", color = 0xFFD52E,
-				})
-				Net.event("WorldNotice"):FireClient(p, { kind = "gate_open", gate = gate.id })
-				PlayerDataService.sync(p)
-			end
-		end
+		WorldService.tryGate(player, gate.id)
 	end)
 end
 
@@ -440,6 +459,30 @@ function WorldService.start()
 
 	for _, gate in ipairs(Biomes.gates) do
 		buildGate(gate)
+	end
+	-- Update 1: the Ocean opens the moment UpdateLevel reaches 1 (no server restart needed)
+	local function oceanLock()
+		local w = world()
+		local lock = w and w:FindFirstChild("OceanLock", true)
+		if lock and updateLevel() >= 1 then
+			lock:Destroy()
+			for _, gate in ipairs(Biomes.gates) do
+				if gate.update and not (gateMarker(gate.id) and gateMarker(gate.id):FindFirstChild("GatePrompt")) then
+					buildGate(gate)
+				end
+			end
+			WorldService.topUp("Ocean")
+		end
+	end
+	if worldState then
+		worldState:GetAttributeChangedSignal("UpdateLevel"):Connect(oceanLock)
+	end
+	oceanLock()
+	Net.func("TryGate").OnServerInvoke = function(player, gateId)
+		if typeof(gateId) ~= "string" then
+			return { ok = false, reason = "bad gate" }
+		end
+		return WorldService.tryGate(player, gateId)
 	end
 	for _, id in ipairs(Biomes.order) do
 		WorldService.topUp(id)

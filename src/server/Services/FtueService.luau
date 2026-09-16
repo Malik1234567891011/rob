@@ -282,6 +282,8 @@ function FtueService.onFirstFeed(player: Player)
 		return
 	end
 
+	-- the FEED hint has done its job; clear it now, not when the next line arrives
+	step(player, 3, {})
 	-- 0:25 "Try feeding it something weird."
 	task.delay(2.2, function()
 		if not player.Parent then

@@ -496,6 +496,12 @@ function UIController.ftue(stepIndex: number, payload)
 			end
 		end)
 	end
+	-- steps that wait on the player (pick an egg, take the apple, press FEED) stay up until
+	-- the next step replaces them; the rest are moments and fade on their own
+	local waitsOnPlayer = stepIndex == 0 or stepIndex == 2 or stepIndex == 3
+	if waitsOnPlayer then
+		return
+	end
 	task.delay(stepIndex == 4 and 6 or 4, function()
 		if hint.Text == payload.text then
 			hint.Visible = false

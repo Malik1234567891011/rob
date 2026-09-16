@@ -43,6 +43,21 @@ local GameEvents = require(Services:WaitForChild("GameEvents"))
 
 -- ═══ REMOTE HANDLERS ═════════════════════════════════════════════════════════
 
+-- SPEC §39 moments: the client reports captures/shares, the server records them
+local momentBudget: { [number]: number } = {}
+Net.event("Moment").OnServerEvent:Connect(function(player, payload)
+	if typeof(payload) ~= "table" or typeof(payload.kind) ~= "string" then
+		return
+	end
+	local now = os.clock()
+	if (momentBudget[player.UserId] or 0) > now then
+		return
+	end
+	momentBudget[player.UserId] = now + 1
+	local event = payload.step == "share" and "moment_share" or "moment_capture"
+	AnalyticsService.track(event, player, { kind = string.sub(payload.kind, 1, 24) })
+end)
+
 Net.func("PickEgg").OnServerInvoke = function(player, index)
 	if type(index) ~= "number" then
 		return { ok = false, reason = "bad index" }

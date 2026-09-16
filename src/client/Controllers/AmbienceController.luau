@@ -89,14 +89,27 @@ function AmbienceController.start()
 	buildRain()
 	local ws = ReplicatedStorage:WaitForChild("WorldState", 20)
 	local spinners = {}
-	local function addSpin(m)
-		if m:IsA("Model") or m:IsA("BasePart") then
-			-- spin about the part's CENTRE, not its pivot (a portal disc's pivot is the arch base)
-			local part = m:IsA("Model") and m.PrimaryPart or m
-			local base = m:GetPivot()
-			local centre = part and base:ToObjectSpace(CFrame.new(part.Position)) or CFrame.identity
-			spinners[m] = { base = base, centre = centre - centre.Position + centre.Position }
+	local function addSpin(m: Instance)
+		if not (m:IsA("Model") or m:IsA("BasePart")) then
+			return
 		end
+		task.spawn(function()
+			-- the model can replicate before its mesh does (streaming): wait for the part
+			local part: BasePart? = if m:IsA("BasePart") then m else nil
+			for _ = 1, 100 do
+				if part then
+					break
+				end
+				part = (m :: Model).PrimaryPart or m:FindFirstChildWhichIsA("BasePart")
+				task.wait(0.1)
+			end
+			if not part or not m.Parent then
+				return
+			end
+			-- spin about the part's CENTRE, not its pivot (a portal disc's pivot is the arch base)
+			local base = (m :: any):GetPivot()
+			spinners[m] = { base = base, centre = base:ToObjectSpace(CFrame.new(part.Position)) }
+		end)
 	end
 	for _, m in ipairs(CollectionService:GetTagged("Spin")) do
 		addSpin(m)

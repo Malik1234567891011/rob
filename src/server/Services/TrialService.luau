@@ -459,10 +459,16 @@ end
 
 function TrialService.leave(player: Player)
 	for id, s in pairs(sessions) do
-		if s.players[player] then
+		local e = s.players[player]
+		if e then
 			s.players[player] = nil
 			s.count -= 1
 			restoreStats(player)
+			-- walking out mid-round puts you back where you came from, not stranded in the arena
+			if s.state ~= "queue" and player.Character then
+				local ret = marker(s.arena, "Return")
+				player.Character:PivotTo(e.returnCF or (ret and ret.CFrame + Vector3.new(0, 4, 0)) or CFrame.new(0, 10, 0))
+			end
 			Net.event("TrialState"):FireClient(player, { trial = id, state = "closed" })
 			if s.count <= 0 and s.state ~= "results" then
 				if s.objects then

@@ -18,12 +18,23 @@ local CreatureController = require(Controllers:WaitForChild("CreatureController"
 local UIController = require(Controllers:WaitForChild("UIController"))
 local MovementController = require(Controllers:WaitForChild("MovementController"))
 local AmbienceController = require(Controllers:WaitForChild("AmbienceController"))
+local WorldFxController = require(Controllers:WaitForChild("WorldFxController"))
 
-EffectsController.start()
-UIController.build()
-CreatureController.start()
-MovementController.start()
-AmbienceController.start()
+-- one broken controller must never take the rest of the client down with it
+local function boot(name: string, fn: () -> ())
+	local ok, err = pcall(fn)
+	if not ok then
+		warn("[Client] " .. name .. " failed to start: " .. tostring(err))
+	end
+end
+boot("Effects", EffectsController.start)
+boot("UI", UIController.build)
+boot("Creature", CreatureController.start)
+boot("Movement", MovementController.start)
+boot("Ambience", AmbienceController.start)
+boot("WorldFx", function()
+	WorldFxController.start(EffectsController, UIController)
+end)
 
 -- The food leaves the player's hand and arcs into the open mouth, timed to the lunge of
 -- the eat animation (Shared.CreatureAnimator ACTIONS.eat opens the jaw at ~0.3 s).
@@ -66,6 +77,7 @@ end
 Net.event("ProfileSync").OnClientEvent:Connect(function(profile)
 	UIController.setProfile(profile)
 	EffectsController.applySettings(profile.settings)
+	WorldFxController.syncProfile(profile)
 end)
 
 Net.event("CreatureSync").OnClientEvent:Connect(function(genome)
@@ -89,6 +101,9 @@ Net.event("FtueStep").OnClientEvent:Connect(function(index, payload)
 end)
 
 Net.event("WorldNotice").OnClientEvent:Connect(function(payload)
+	if payload.kind == "gate_open" and payload.gate then
+		WorldFxController.openGate(payload.gate, payload.instant)
+	end
 	UIController.notice(payload)
 end)
 

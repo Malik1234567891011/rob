@@ -128,7 +128,14 @@ function DevHooks.start(services)
 		if not s or type(s[f]) ~= "function" then
 			return { ok = false, reason = "no such function " .. tostring(name) }
 		end
-		return { ok = true, result = s[f](...) }
+		-- "$me" in the args becomes the playtest Player (JSON can't carry an Instance)
+		local args = table.pack(...)
+		for i = 1, args.n do
+			if args[i] == "$me" then
+				args[i] = me()
+			end
+		end
+		return { ok = true, result = s[f](table.unpack(args, 1, args.n)) }
 	end
 
 	local function dispatch(name, ...)

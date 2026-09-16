@@ -1,0 +1,23 @@
+# Secrets — never commit
+*.env
+.env*
+secrets/
+**/openai*.txt
+**/apikey*
+
+# OS / editor
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Roblox
+*.rbxlx.lock
+*.rbxl.lock
+sourcemap.json
+
+# Build / temp
+/tmp/
+*.log
+tools/__pycache__/
+.manifest.json
